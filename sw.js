@@ -1,5 +1,5 @@
 /* sw.js — офлайн-кэш */
-const CACHE = 'fithelper-v3';
+const CACHE = 'fithelper-v4';
 const ASSETS = [
   './', './index.html', './css/style.css',
   './js/app.js', './js/store.js', './js/engine.js', './js/gemini.js', './js/ui.js',
