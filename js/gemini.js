@@ -100,7 +100,7 @@ export async function analyzePhoto(base64, mime, hint){
 /* ---------- еда текстом ---------- */
 export async function analyzeText(text){
   const parts = [{ text: 'Пользователь описал что съел: "' + text + '". Определи блюда, вес и КБЖУ.' }];
-  const r = await call(parts, FOOD_SCHEMA, FOOD_PROMPT);
+  const r = await call(parts, FOOD_SCHEMA, FOOD_PROMPT, { lite:true });
   return { ok: r.ok !== false, note: r.note || '', items: (r.items || []).map(normFood) };
 }
 
@@ -172,7 +172,7 @@ const SUGGEST_PROMPT = `Ты жёсткий, но неглупый тренер 
 export async function suggestMeal(ctx, wish){
   const parts = [{ text: 'Состояние дня:\n' + JSON.stringify(ctx, null, 1) +
     (wish ? '\n\nЧего хочется человеку: ' + wish : '') }];
-  return await call(parts, SUGGEST_SCHEMA, SUGGEST_PROMPT);
+  return await call(parts, SUGGEST_SCHEMA, SUGGEST_PROMPT, { lite:true });
 }
 
 /* ---------- можно ли это съесть ---------- */
@@ -206,7 +206,7 @@ const JUDGE_PROMPT = `Ты жёсткий тренер по питанию. От
 
 export async function judgeFood(text, ctx){
   const parts = [{ text: 'Человек спрашивает: "' + text + '"\n\nСостояние дня:\n' + JSON.stringify(ctx, null, 1) }];
-  return await call(parts, JUDGE_SCHEMA, JUDGE_PROMPT);
+  return await call(parts, JUDGE_SCHEMA, JUDGE_PROMPT, { lite:true });
 }
 
 /* ---------- разбор графика (голос → текст → слоты) ---------- */
@@ -248,11 +248,11 @@ const SCHED_PROMPT = `Ты разбираешь рабочий график че
 
 export async function parseSchedule(text){
   const parts = [{ text: 'График пользователя: "' + text + '"' }];
-  return await call(parts, SCHED_SCHEMA, SCHED_PROMPT);
+  return await call(parts, SCHED_SCHEMA, SCHED_PROMPT, { lite:true });
 }
 
 /* ---------- утилита: файл → base64 ---------- */
-export function fileToBase64(file, maxSide = 1024){
+export function fileToBase64(file, maxSide = 768){
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -264,7 +264,7 @@ export function fileToBase64(file, maxSide = 1024){
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
       c.getContext('2d').drawImage(img, 0, 0, w, h);
-      const dataUrl = c.toDataURL('image/jpeg', 0.82);
+      const dataUrl = c.toDataURL('image/jpeg', 0.78);
       resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg', dataUrl });
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось прочитать изображение.')); };

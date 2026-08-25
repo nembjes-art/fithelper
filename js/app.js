@@ -138,13 +138,11 @@ function viewToday(){
 
     '<div class="card">' +
       '<div class="row between mb"><h2 style="margin:0">Движение</h2>' +
-        '<span class="badge '+(health.steps >= 10000 ? 'ok' : (health.steps >= 6000 ? 'warn' : 'bad'))+'">'+num(health.steps)+' шагов</span></div>' +
+        '<b class="small">'+num(burned)+' ккал'+(bonus>50?' <span style="color:var(--ok)">+'+num(bonus)+'</span>':'')+'</b></div>' +
       meter('Шаги', health.steps, 10000, 'шагов', health.steps>=10000?'ok':'accent') +
-      '<div class="row between mt"><span class="small muted">Сожжено движением</span>' +
-        '<b class="small">'+num(burned)+' ккал'+(bonus>50?' <span style="color:var(--ok)">(+'+num(bonus)+' сверх плана)</span>':'')+'</b></div>' +
-      '<div class="row mt"><input type="number" id="t-steps" class="grow" placeholder="вбить шаги вручную" inputmode="numeric">' +
+      '<div class="row mt"><input type="number" id="t-steps" class="grow" placeholder="шаги из Здоровья" inputmode="numeric">' +
         '<button class="btn sm" id="t-steps-save">ОК</button></div>' +
-      '<div class="tiny dim mt">Шаги можно закинуть одним тапом через ярлык «Команды» — как настроить, в Настройках.</div>' +
+      '<div class="tiny dim mt">Можно не вводить: отметь галочкой ходьбу и тренировку в заданиях — калории посчитаются сами.</div>' +
     '</div>' +
 
     '<div class="card"><div class="row between mb"><h2 style="margin:0">Баланс дня</h2>' +
@@ -908,19 +906,18 @@ function viewSettings(){
     '</div>' +
 
     '<div class="card"><h2>Шаги с iPhone</h2>' +
-      '<div class="tiny muted" style="line-height:1.6">Apple не пускает браузер в Здоровье напрямую, поэтому шаги закидывает ярлык «Команды». Настраивается один раз:<br><br>' +
-      '<b>1.</b> Открой приложение <b>Команды</b> → <b>+</b> → <b>Добавить действие</b><br>' +
-      '<b>2.</b> Найди <b>«Получить образцы Здоровья»</b>. Тип — <b>Шаги</b>, период — <b>Сегодня</b>, объединить — <b>Сумма</b><br>' +
-      '<b>3.</b> Ещё раз то же действие, но тип — <b>Активная энергия</b><br>' +
-      '<b>4.</b> Добавь действие <b>«Текст»</b> и впиши туда:<br>' +
-      '<code style="display:block;background:var(--surface-2);padding:8px;border-radius:6px;margin:6px 0;word-break:break-all;font-size:11px">' +
-        esc(location.origin + location.pathname) + '#steps=[Шаги]&active=[Энергия]</code>' +
-      'вместо [Шаги] и [Энергия] подставь результаты действий из пунктов 2 и 3<br>' +
-      '<b>5.</b> Добавь действие <b>«Открыть URL»</b><br>' +
-      '<b>6.</b> Назови ярлык «Шаги» и вынеси на экран «Домой»<br><br>' +
-      'Дальше — один тап по ярлыку, и цифры в приложении. Можно повесить автоматизацию на 22:00, чтобы делалось само.<br><br>' +
-      '<b>Если не сработает</b> — на экране «Сегодня» есть поле для ручного ввода шагов. Открыл Здоровье, посмотрел цифру, вбил. 10 секунд.</div>' +
-      '<button class="btn block mt" id="st-copyurl">Скопировать ссылку для ярлыка</button>' +
+      '<div class="small muted mb">Apple не пускает браузер в «Здоровье». Проще всего просто отмечать ходьбу галочкой в заданиях — калории посчитаются сами. Или вбивать шаги руками на экране «Сегодня», это 10 секунд.</div>' +
+      '<button class="btn block" id="st-shortcut">Хочу автоматом — показать инструкцию</button>' +
+      '<div id="st-sc" class="hidden mt">' +
+        '<div class="tiny muted" style="line-height:1.6">' +
+        '<b>1.</b> Приложение <b>Команды</b> → <b>+</b> → <b>Добавить действие</b><br>' +
+        '<b>2.</b> <b>«Получить образцы Здоровья»</b>: тип <b>Шаги</b>, период <b>Сегодня</b>, объединить <b>Сумма</b><br>' +
+        '<b>3.</b> Ещё раз то же, но тип <b>Активная энергия</b><br>' +
+        '<b>4.</b> Действие <b>«Текст»</b> → вставить ссылку (кнопка ниже) и подставить в неё результаты пп. 2–3<br>' +
+        '<b>5.</b> Действие <b>«Открыть URL»</b><br>' +
+        '<b>6.</b> Назвать «Шаги», вынести на экран «Домой»</div>' +
+        '<button class="btn block mt" id="st-copyurl">Скопировать ссылку для ярлыка</button>' +
+      '</div>' +
     '</div>' +
 
     '<div class="card"><h2>Параметры</h2>' +
@@ -954,6 +951,13 @@ function viewSettings(){
 
     '<button class="btn ghost block" id="st-back">Назад к итогам</button>' +
   '</div>';
+
+  $('#st-shortcut').onclick = () => {
+    const box = $('#st-sc');
+    box.classList.toggle('hidden');
+    $('#st-shortcut').textContent = box.classList.contains('hidden')
+      ? 'Хочу автоматом — показать инструкцию' : 'Свернуть инструкцию';
+  };
 
   $('#st-copyurl').onclick = async () => {
     const url = location.origin + location.pathname + '#steps=[Шаги]&active=[Энергия]';
