@@ -73,7 +73,23 @@ function load(){
 }
 
 function save(){
-  try{ localStorage.setItem(KEY, JSON.stringify(state)); }
+  try{
+    // Предохранитель: никогда не затираем настроенный профиль пустым состоянием.
+    // Такое возможно, если модуль стартовал до того, как данные оказались в хранилище
+    // (например, ссылка с шагами открылась в уже висящей вкладке).
+    if (!state.profile.onboarded){
+      const raw = localStorage.getItem(KEY);
+      if (raw){
+        let prev = null;
+        try { prev = JSON.parse(raw); } catch(_){}
+        if (prev && prev.profile && prev.profile.onboarded){
+          console.warn('store: отказ перезаписать настроенный профиль пустым');
+          return;
+        }
+      }
+    }
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }
   catch(e){ console.error('store save failed', e); }
 }
 
@@ -187,6 +203,16 @@ export const S = {
     state.log = state.log.slice(0, 120); save();
   },
   get log(){ return state.log; },
+
+  /* правда ли в хранилище лежит настроенный профиль (может отличаться от памяти) */
+  storedIsOnboarded(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return false;
+      const prev = JSON.parse(raw);
+      return !!(prev && prev.profile && prev.profile.onboarded);
+    }catch(_){ return false; }
+  },
 
   /* сервис */
   export(){ return JSON.stringify(state, null, 2); },

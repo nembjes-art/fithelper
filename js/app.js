@@ -102,8 +102,10 @@ function viewToday(){
   const water = S.waterFor(d);
   const health = S.healthFor(d);
   const burned = E.burnedToday(d);
+  const bd = E.burnBreakdown(d);
+  const sp = E.spentToday(d);
   const bonus = Math.max(0, burned - tg.activityKcal);
-  const balance = Math.round(dt.kcal - (tg.tdee + burned - tg.activityKcal));
+  const balance = Math.round(dt.kcal - sp.total);
   const slots = E.ensureSchedule(d);
   const pz = E.praise();
   const done = S.doneFor(d);
@@ -137,22 +139,32 @@ function viewToday(){
     '</div></div>' +
 
     '<div class="card">' +
-      '<div class="row between mb"><h2 style="margin:0">Движение</h2>' +
-        '<b class="small">'+num(burned)+' ккал'+(bonus>50?' <span style="color:var(--ok)">+'+num(bonus)+'</span>':'')+'</b></div>' +
-      meter('Шаги', health.steps, 10000, 'шагов', health.steps>=10000?'ok':'accent') +
-      '<div class="row mt"><input type="number" id="t-steps" class="grow" placeholder="шаги из Здоровья" inputmode="numeric">' +
+      '<div class="row between mb"><h2 style="margin:0">Сжигание — цель дня</h2>' +
+        '<span class="badge '+(bd.pct>=100?'ok':(bd.pct>=60?'warn':'bad'))+'">'+bd.pct+'%</span></div>' +
+      '<div class="budget">' +
+        ring(bd.pct, num(bd.total), 'из '+num(bd.goal), bd.pct>=100?'var(--ok)':'var(--accent)') +
+        '<div class="budget-side">' +
+          meter('Шаги', bd.steps, 10000, 'шагов', bd.steps>=10000?'ok':'accent') +
+          '<div class="row between small"><span class="muted">Ходьба и шаги</span><b>'+num(bd.stepsKcal + bd.walkKcal)+' ккал</b></div>' +
+          '<div class="row between small"><span class="muted">Тренировки</span><b>'+num(bd.trainKcal)+' ккал</b></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="tiny dim mt">'+(bd.pct >= 100
+        ? 'Цель дня взята. Всё сверх неё движок отдаёт тебе обратно едой.'
+        : 'До цели ещё '+num(bd.left)+' ккал — это примерно '+num(Math.round(bd.left/(6.1*(tg.weight/100))))+' минут быстрым шагом.')+'</div>' +
+      '<div class="row mt"><input type="number" id="t-steps" class="grow" placeholder="шаги вручную" inputmode="numeric">' +
         '<button class="btn sm" id="t-steps-save">ОК</button></div>' +
-      '<div class="tiny dim mt">Можно не вводить: отметь галочкой ходьбу и тренировку в заданиях — калории посчитаются сами.</div>' +
     '</div>' +
 
     '<div class="card"><div class="row between mb"><h2 style="margin:0">Баланс дня</h2>' +
       '<span class="badge '+(balance <= 0 ? 'ok':'bad')+'">'+(balance<=0?'−':'+')+num(Math.abs(balance))+' ккал</span></div>' +
-      '<div class="grid3">' +
+      '<div class="grid3 mb">' +
         '<div class="stat"><b>'+num(dt.kcal)+'</b><span>съедено</span></div>' +
-        '<div class="stat"><b>'+num(tg.tdee + burned - tg.activityKcal)+'</b><span>потрачено</span></div>' +
+        '<div class="stat"><b>'+num(sp.total)+'</b><span>потрачено</span></div>' +
         '<div class="stat" style="background:'+(balance<=0?'var(--ok-soft)':'var(--bad-soft)')+'"><b>'+num(Math.abs(balance))+'</b><span>'+(balance<=0?'дефицит':'профицит')+'</span></div>' +
       '</div>' +
-      '<div class="tiny dim mt">'+(balance<=0
+      '<div class="tiny dim">Потрачено = покой '+num(sp.rest)+' + движение '+num(sp.move)+' + переваривание '+num(sp.tef)+'.<br>' +
+        (balance<=0
         ? 'Дефицит держится. Таким темпом — '+num(Math.abs(balance)*7/7700, 2)+' кг жира в неделю.'
         : 'Сегодня ты в плюсе. Один такой день ничего не ломает — два подряд ломают неделю.')+'</div>' +
     '</div>' +
@@ -742,7 +754,7 @@ function viewStats(){
     '<div class="card"><h2>Сводка '+esc(label)+'</h2>' +
       '<div class="grid2 mb">' +
         '<div class="stat"><b>'+num(ps.avgKcal)+'</b><span>съедено, ккал/день</span></div>' +
-        '<div class="stat"><b>'+num(tg.tdee + ps.avgBurn - ps.planBurn)+'</b><span>потрачено, ккал/день</span></div>' +
+        '<div class="stat"><b>'+num(ps.avgSpent)+'</b><span>потрачено, ккал/день</span></div>' +
         '<div class="stat" style="background:'+(ps.avgDeficit>0?'var(--ok-soft)':'var(--bad-soft)')+'"><b>'+num(Math.abs(ps.avgDeficit))+'</b><span>'+(ps.avgDeficit>0?'дефицит':'профицит')+', ккал/день</span></div>' +
         '<div class="stat"><b>'+(ps.weightDelta!==null?(ps.weightDelta>0?'+':'')+num(ps.weightDelta,2):'—')+'</b><span>вес, кг '+esc(label)+'</span></div>' +
       '</div>' +
@@ -753,8 +765,8 @@ function viewStats(){
       '</div>' +
     '</div>' +
 
-    '<div class="card"><h2>План против факта</h2>' +
-      '<div class="row between mb"><span class="small muted">Сожжено движением ' + esc(label) + '</span>' +
+    '<div class="card"><h2>Сжигание: цель против факта</h2>' +
+      '<div class="row between mb"><span class="small muted">Цель ' + num(ps.planBurn) + ' ккал/день ' + esc(label) + '</span>' +
         '<span class="badge '+(ps.burnPct>=100?'ok':(ps.burnPct>=70?'warn':'bad'))+'">'+ps.burnPct+'% от плана</span></div>' +
       (ps.rows.length >= 2 ? '<div class="chart-wrap">'+burnChart(ps)+'</div>'
                            : '<div class="empty">Данных пока нет</div>') +
@@ -1027,6 +1039,10 @@ function ingestHash(){
   const q = new URLSearchParams(raw);
   const steps = q.get('steps'), active = q.get('active');
   if (steps == null && active == null) return false;
+
+  // Ссылка могла открыться во вкладке, чьё состояние в памяти устарело —
+  // тогда перезагружаем страницу, хеш сохранится и данные запишутся правильно.
+  if (!S.profile.onboarded && S.storedIsOnboarded()){ location.reload(); return false; }
 
   const date = q.get('date') || todayISO();
   const patch = {};

@@ -256,6 +256,42 @@ export function verdict(){
   return { kind:'ok', title:'В графике', text:'Осталось ' + left + ' ккал и ' + Math.max(0, tg.protein - Math.round(dt.p)) + ' г белка. Держи темп.' };
 }
 
+/* ---------- из чего складывается сожжённое за день ---------- */
+export function burnBreakdown(date){
+  const d = date || todayISO();
+  const w = currentTrendWeight();
+  const h = S.healthFor(d);
+  const done = S.doneFor(d);
+  const slots = S.scheduleFor(d) || buildDay(d);
+
+  const stepsKcal = Math.round(h.steps * (w/100) * 0.045);
+  let trainKcal = 0, walkKcal = 0;
+  for (const sl of slots){
+    if (!done.includes(sl.id)) continue;
+    if (sl.kind === 'train') trainKcal += Math.round((sl.minutes||0) * 7.0 * (w/100));
+    if (sl.kind === 'walk' && h.steps === 0) walkKcal += Math.round((sl.minutes||0) * 6.1 * (w/100));
+  }
+  // Если телефон отдал активные калории — они уже включают и шаги, и тренировку
+  const total = h.active > 0 ? h.active : (stepsKcal + trainKcal + walkKcal);
+  const goal = targets().activityKcal;
+  return {
+    steps: h.steps, stepsKcal, trainKcal, walkKcal, total, goal,
+    fromPhone: h.active > 0,
+    pct: goal ? Math.round(total/goal*100) : 0,
+    left: Math.max(0, goal - total)
+  };
+}
+
+/* ---------- сколько всего потрачено за день, прозрачно ---------- */
+/* покой + движение + переваривание пищи (~10% от съеденного) */
+export function spentToday(date){
+  const d = date || todayISO();
+  const b = bmr(S.profile, currentTrendWeight());
+  const move = burnedToday(d);
+  const tef = Math.round(dayTotals(d).kcal * 0.10);
+  return { rest: b, move, tef, total: b + move + tef };
+}
+
 /* ---------- приговор еде: можно / половину / нельзя ---------- */
 export function ruleFood(addKcal, addProtein){
   const tg = targets();
@@ -428,8 +464,10 @@ export function periodStats(days){
     const t = dayTotals(d);
     const h = S.healthFor(d);
     const burned = burnedToday(d);
+    const sp = spentToday(d);
     rows.push({
       date: d,
+      spent: sp.total,
       kcal: Math.round(t.kcal),
       protein: Math.round(t.p),
       logged: t.n > 0,
@@ -459,12 +497,13 @@ export function periodStats(days){
   const weightDelta = inRange.length >= 2
     ? +(inRange[inRange.length-1].trend - inRange[0].trend).toFixed(2) : null;
 
+  const avgSpent = avg(rows, 'spent');
   const totalBurnPlan = planBurn * days;
   const totalBurnReal = rows.reduce((a,r)=>a+r.burnReal,0);
 
   return {
     days, rows,
-    avgKcal, avgProt, avgSteps, avgBurn, planBurn,
+    avgKcal, avgProt, avgSteps, avgBurn, planBurn, avgSpent,
     limit: tg.kcal,
     loggedDays: eaten.length,
     steppedDays: stepped.length,
@@ -472,7 +511,7 @@ export function periodStats(days){
     weightDelta,
     totalBurnPlan, totalBurnReal,
     burnPct: totalBurnPlan ? Math.round(totalBurnReal/totalBurnPlan*100) : 0,
-    avgDeficit: eaten.length ? Math.round((tg.tdee + avgBurn - planBurn) - avgKcal) : 0
+    avgDeficit: eaten.length ? Math.round(avgSpent - avgKcal) : 0
   };
 }
 
