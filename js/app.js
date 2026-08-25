@@ -615,7 +615,23 @@ function viewPlan(){
         '<button class="chip'+(wt==='evening'?' on':'')+'" data-w="evening">Вечер 15–00</button>' +
       '</div>' +
       '<div class="tiny dim mt">Недели чередуются автоматически. Если сбилось — переключи здесь, план пересоберётся.</div>' +
-      '<button class="btn block mt" id="p-voice">Продиктовать график голосом</button>' +
+    '</div>' +
+
+    '<div class="card"><h2>Когда ты можешь заниматься</h2>' +
+      '<div class="tiny muted mb">План строится строго внутри этих окон. Если окно короткое — приложение само урежет тренировку, а не предложит невозможное.</div>' +
+      [['morning','Неделя 7–16'],['evening','Неделя 15–00'],['weekend','Выходные']].map(([k,t]) => {
+        const w = (S.settings.windows && S.settings.windows[k]) || {from:'',to:''};
+        return '<div class="row mb" style="gap:8px">' +
+          '<span class="small muted" style="flex:0 0 96px">'+esc(t)+'</span>' +
+          '<input type="time" data-win="'+k+'" data-side="from" value="'+esc(w.from)+'" class="grow">' +
+          '<span class="dim">—</span>' +
+          '<input type="time" data-win="'+k+'" data-side="to" value="'+esc(w.to)+'" class="grow">' +
+        '</div>';
+      }).join('') +
+      '<div class="btn-row mt">' +
+        '<button class="btn primary" id="p-win-save">Сохранить окна</button>' +
+        '<button class="btn" id="p-voice">Сказать голосом</button>' +
+      '</div>' +
     '</div>' +
 
     days.map(d => {
@@ -645,6 +661,19 @@ function viewPlan(){
     toast('План пересобран'); render();
   };
   $('#p-voice').onclick = openVoice;
+  $('#p-win-save').onclick = () => {
+    let n = 0;
+    for (const k of ['morning','evening','weekend']){
+      const f = $('[data-win="'+k+'"][data-side="from"]').value;
+      const t = $('[data-win="'+k+'"][data-side="to"]').value;
+      if (!f || !t) continue;
+      if (E.toMin(t) === E.toMin(f)) { toast('У окна «'+k+'» начало и конец совпадают'); return; }
+      S.setWindow(k, f, t); n++;
+    }
+    if (!n) return toast('Заполни хотя бы одно окно');
+    S.clearScheduleFrom(mondayOf(todayISO()));   // пересобираем всю текущую неделю
+    toast('План пересобран под твои окна'); render();
+  };
 
   $$('[data-day]').forEach(box => {
     box.onclick = e => {
@@ -659,10 +688,11 @@ function viewPlan(){
 function openVoice(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const { el, close } = sheet('График голосом',
-    '<div class="tiny muted mb">Скажи или напиши свободно: «на этой неделе работаю с семи до четырёх, в среду выходной, в субботу свободен весь день».</div>' +
+    '<div class="tiny muted mb">Скажи, <b>когда ты свободен для тренировки</b>. Например: «в вечерние смены могу только с двух до трёх», «в утренние недели свободен после шести», «в выходные с одиннадцати до часу».</div>' +
     (SR ? '<button class="btn block mb" id="v-rec">Начать запись</button>' : '<div class="tiny dim mb">Голосовой ввод в этом браузере недоступен — используй диктовку клавиатуры iPhone (значок микрофона).</div>') +
     '<label class="f"><span>Текст</span><textarea id="v-text" placeholder="работаю с 7 до 16, в выходные свободен"></textarea></label>' +
-    '<button class="btn primary block" id="v-go">Разобрать и перестроить план</button>');
+    '<button class="btn primary block" id="v-go">Разобрать и перестроить план</button>' +
+    '<div id="v-out" class="mt"></div>');
 
   if (SR){
     const rec = new SR();
@@ -690,37 +720,44 @@ function openVoice(){
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Разбираю…';
     try{
       const r = await G.parseSchedule(t);
-      applySchedule(r);
+      const changed = applySchedule(r);
+      if (!changed.length){
+        btn.disabled = false; btn.textContent = 'Сказать иначе';
+        $('#v-out', el).innerHTML = '<div class="verdict warn"><div class="t">Не понял, что менять</div>' +
+          '<div class="d">'+esc(r.summary || 'Скажи конкретнее: «в вечерние смены могу заниматься с 14 до 15».')+'</div></div>';
+        return;
+      }
       close();
-      toast(r.summary || 'План перестроен');
+      toast('Готово: ' + changed.join('; '));
       render();
     }catch(e){ btn.disabled=false; btn.textContent='Повторить'; toast(e.message); }
   };
 }
 
 function applySchedule(r){
-  const mon = mondayOf(todayISO());
-  if (r.weekType === 'morning' || r.weekType === 'evening'){
-    S.setSettings({ weekType: r.weekType, weekAnchor: mon });
+  const W = r.windows || {};
+  const ok = t => /^\d{1,2}:\d{2}$/.test(String(t||''));
+  let changed = [];
+  const label = { morning:'смена 7–16', evening:'смена 15–00', weekend:'выходные' };
+
+  for (const k of ['morning','evening','weekend']){
+    const w = W[k];
+    if (w && ok(w.from) && ok(w.to)){
+      const from = w.from.length === 4 ? '0'+w.from : w.from;
+      const to   = w.to.length   === 4 ? '0'+w.to   : w.to;
+      S.setWindow(k, from, to);
+      changed.push(label[k] + ' → ' + from + '–' + to);
+    }
   }
-  S.clearScheduleFrom(todayISO());
-  (r.days || []).forEach(d => {
-    const idx = Math.min(6, Math.max(0, (Number(d.dow)||1) - 1));
-    const date = addDays(mon, idx);
-    if (date < todayISO()) return;
-    const slots = E.buildDay(date);
-    if (d.freeFrom){
-      slots.forEach(s => {
-        if (s.kind === 'train') s.time = d.freeFrom;
-        if (s.kind === 'walk' && d.freeTo) s.time = d.freeTo;
-      });
-    }
-    if (!d.busyFrom && !d.busyTo && d.note){
-      slots.forEach(s => { if (s.kind === 'train') s.desc += ' (' + d.note + ')'; });
-    }
-    S.setSchedule(date, slots);
-  });
-  S.pushLog({ kind:'schedule', text:'График перестроен голосом' });
+  if (r.weekType === 'morning' || r.weekType === 'evening'){
+    S.setSettings({ weekType: r.weekType, weekAnchor: mondayOf(todayISO()) });
+    changed.push('текущая неделя: ' + label[r.weekType]);
+  }
+  if (changed.length){
+    S.clearScheduleFrom(mondayOf(todayISO()));
+    S.pushLog({ kind:'schedule', text:'Окна изменены: ' + changed.join('; ') });
+  }
+  return changed;
 }
 
 /* ================= ИТОГИ ================= */

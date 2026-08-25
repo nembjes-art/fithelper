@@ -23,7 +23,13 @@ const DEFAULTS = {
     eatWindowStart: '10:00',
     eatWindowEnd: '20:00',
     weekType: 'morning',      // morning | evening — текущая рабочая неделя
-    weekAnchor: null          // ISO дата понедельника, с которой считается чередование
+    weekAnchor: null,         // ISO дата понедельника, с которой считается чередование
+    // Окна, когда человек реально может тренироваться. Задаются голосом или руками.
+    windows: {
+      morning: { from: '17:30', to: '19:00' },   // неделя со сменой 7–16
+      evening: { from: '10:00', to: '12:00' },   // неделя со сменой 15–00
+      weekend: { from: '11:00', to: '13:00' }
+    }
   },
   // Массивы записей
   food: [],     // {id, date, time, name, kcal, p, f, c, grams, src}
@@ -134,6 +140,11 @@ export const S = {
 
   setProfile(patch){ Object.assign(state.profile, patch); save(); },
   setSettings(patch){ Object.assign(state.settings, patch); save(); },
+  setWindow(kind, from, to){
+    const w = state.settings.windows || (state.settings.windows = {});
+    w[kind] = { from, to };
+    save();
+  },
 
   /* еда */
   foodFor(date){ return state.food.filter(f => f.date === date); },

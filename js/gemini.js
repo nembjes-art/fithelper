@@ -227,45 +227,43 @@ export async function judgeFood(text, ctx){
   return await call(parts, JUDGE_SCHEMA, JUDGE_PROMPT, { lite:true });
 }
 
-/* ---------- разбор графика (голос → текст → слоты) ---------- */
+/* ---------- разбор графика: превращаем речь в окна для тренировок ---------- */
 const SCHED_SCHEMA = {
   type:'object',
   properties:{
     weekType:{type:'string'},
-    days:{
-      type:'array',
-      items:{
-        type:'object',
-        properties:{
-          dow:{type:'number'},
-          busyFrom:{type:'string'},
-          busyTo:{type:'string'},
-          freeFrom:{type:'string'},
-          freeTo:{type:'string'},
-          note:{type:'string'}
-        },
-        required:['dow']
+    windows:{
+      type:'object',
+      properties:{
+        morning:{type:'object', properties:{from:{type:'string'}, to:{type:'string'}}},
+        evening:{type:'object', properties:{from:{type:'string'}, to:{type:'string'}}},
+        weekend:{type:'object', properties:{from:{type:'string'}, to:{type:'string'}}}
       }
     },
     summary:{type:'string'}
   },
-  required:['days']
+  required:['summary']
 };
 
-const SCHED_PROMPT = `Ты разбираешь рабочий график человека из свободной речи и превращаешь в структуру.
+const SCHED_PROMPT = `Ты разбираешь речь человека о его графике и превращаешь её в ОКНА, когда он может тренироваться.
 
-Формат:
-- dow: 1=понедельник ... 7=воскресенье
-- busyFrom/busyTo: рабочее время в формате "HH:MM" (пусто если выходной)
-- freeFrom/freeTo: самое большое окно, свободное для тренировки, с учётом дороги и сна
-- weekType: "morning" если смена начинается до 12:00, "evening" если после
-- summary: одно предложение по-русски
+У человека сменный график, недели чередуются:
+- "morning" — неделя со сменой примерно 7:00–16:00
+- "evening" — неделя со сменой примерно 15:00–00:00
+- "weekend" — суббота и воскресенье
 
-Учитывай: после ночной смены до 00:00 человек не тренируется утром рано — окно ставь ближе к 10:00-12:00.
-Если про день ничего не сказано — не выдумывай, пропусти его.`;
+Верни только те окна, про которые он реально что-то сказал. Про остальные НЕ пиши ничего — не выдумывай.
+
+Правила:
+- from/to строго в формате "HH:MM", 24 часа.
+- "с двух до трёх" в вечернюю смену = from "14:00", to "15:00".
+- Окно — это когда он СВОБОДЕН и готов заниматься, а не когда работает.
+- Если он назвал только начало ("после шести свободен") — поставь to на 1,5 часа позже.
+- weekType заполняй только если он явно сказал, какая неделя у него СЕЙЧАС.
+- summary — одно предложение по-русски: что ты понял. Если не понял ничего — так и напиши.`;
 
 export async function parseSchedule(text){
-  const parts = [{ text: 'График пользователя: "' + text + '"' }];
+  const parts = [{ text: 'Человек говорит про свой график: "' + text + '"' }];
   return await call(parts, SCHED_SCHEMA, SCHED_PROMPT, { lite:true });
 }
 

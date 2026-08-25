@@ -366,6 +366,25 @@ export function weekTypeFor(date){
   return flip === 0 ? st.weekType : (st.weekType === 'morning' ? 'evening' : 'morning');
 }
 
+/* ---------- работа со временем ---------- */
+export function toMin(t){ const [h,m] = String(t||'0:0').split(':').map(Number); return (h||0)*60 + (m||0); }
+export function toHHMM(m){
+  m = ((Math.round(m) % 1440) + 1440) % 1440;
+  return String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0');
+}
+
+/* Какое окно для тренировки в этот день */
+export function windowFor(date){
+  const w = (S.settings.windows) || {};
+  const kind = isWeekend(date) ? 'weekend' : (weekTypeFor(date) === 'morning' ? 'morning' : 'evening');
+  const def = { morning:{from:'17:30',to:'19:00'}, evening:{from:'10:00',to:'12:00'}, weekend:{from:'11:00',to:'13:00'} }[kind];
+  const win = w[kind] || def;
+  const from = win.from || def.from, to = win.to || def.to;
+  let len = toMin(to) - toMin(from);
+  if (len <= 0) len += 1440;                 // окно через полночь
+  return { kind, from, to, minutes: Math.max(0, len) };
+}
+
 /* ---------- генератор плана дня ---------- */
 const STRENGTH_A = {
   title: 'Силовая A — низ + спина',
@@ -397,34 +416,62 @@ export function buildDay(date){
   push('weigh', wake, 'Взвешивание', 'Натощак, после туалета, без одежды. Одна цифра в приложение — и забыл.', 'weigh', 2);
   push('water1', wake, 'Стакан воды 500 мл', 'До кофе и до еды. Это запускает обмен и гасит ложный голод.', 'water', 2);
 
-  // — тренировочный блок —
+  // — тренировочный блок и ходьба: строго внутри окна, которое человек задал —
+  const win = windowFor(date);
   const trainDays = [1,2,4,5,6]; // пн вт чт пт сб — 3 силовых + 2 кардио
   const isTrain = trainDays.includes(dow);
+  const avail = Math.min(win.minutes, budget);   // сколько реально есть времени
 
-  if (isTrain){
-    let block, mins;
-    if (dow === 1) { block = STRENGTH_A; mins = Math.min(60, budget); }
-    else if (dow === 4) { block = STRENGTH_B; mins = Math.min(60, budget); }
-    else if (dow === 6) { block = STRENGTH_A; mins = Math.min(60, budget); }
-    else if (dow === 2) { block = INTERVALS; mins = Math.min(40, budget); }
-    else { block = INTERVALS; mins = Math.min(40, budget); }
+  let used = 0;
+  if (isTrain && avail >= 25){
+    let block, want;
+    if (dow === 1)      { block = STRENGTH_A; want = 60; }
+    else if (dow === 4) { block = STRENGTH_B; want = 60; }
+    else if (dow === 6) { block = STRENGTH_A; want = 60; }
+    else                { block = INTERVALS;  want = 40; }
 
-    let time;
-    if (weekend) time = '11:00';
-    else if (wt === 'morning') time = '17:30';   // смена 7–16
-    else time = '10:00';                          // смена 15–00
-    push('train', time, block.title, block.desc + ' Всего ~' + mins + ' мин.', 'train', mins);
+    // оставляем минимум 15 минут на ходьбу, если окно позволяет
+    const reserve = avail >= 55 ? 20 : 0;
+    const mins = Math.max(25, Math.min(want, avail - reserve));
+
+    let desc = block.desc;
+    if (mins < want){
+      desc += ' Окно у тебя ' + win.minutes + ' мин, поэтому сокращаем до ' + mins + ': ' +
+              'убери по одному подходу в каждом упражнении и режь отдых до 45 сек. ' +
+              'Короткая тренировка целиком лучше длинной, которую ты пропустишь.';
+    } else {
+      desc += ' Всего ~' + mins + ' мин.';
+    }
+    push('train', win.from, block.title, desc, 'train', mins);
+    used = mins + 5;
   }
 
-  // — ходьба —
-  const walkMin = weekend ? Math.min(90, Math.max(60, budget)) : (isTrain ? 25 : Math.min(50, budget));
-  const walkTime = weekend ? '15:00' : (wt === 'morning' ? '16:15' : '13:30');
-  push('walk', walkTime,
-    'Ходьба ' + walkMin + ' мин',
-    weekend
-      ? 'Выходные — твоя главная дыра: в будни 4–5 тысяч шагов, в выходные почти ноль. Длинная спокойная ходьба закрывает её и не мешает восстановлению.'
-      : 'Быстрым шагом, не прогулочным. Это ~' + Math.round(walkMin*5.5) + ' ккал и лучший способ гасить перебор по еде.',
-    'walk', walkMin);
+  // — ходьба — в остатке окна, а в свободные дни и выходные шире —
+  let walkMin, walkTime;
+  if (weekend){
+    walkMin = Math.min(90, Math.max(45, budget));
+    walkTime = toHHMM(toMin(win.from) + used);
+  } else if (used > 0){
+    walkMin = Math.max(0, Math.min(avail - used, 30));
+    walkTime = toHHMM(toMin(win.from) + used);
+  } else {
+    walkMin = Math.min(Math.max(25, avail), budget);
+    walkTime = win.from;
+  }
+
+  if (walkMin >= 10){
+    push('walk', walkTime,
+      'Ходьба ' + walkMin + ' мин',
+      weekend
+        ? 'Выходные — твоя главная дыра: в будни 4–5 тысяч шагов, в выходные почти ноль. Длинная спокойная ходьба закрывает её и не мешает восстановлению.'
+        : 'Быстрым шагом, не прогулочным. Это ~' + Math.round(walkMin*5.5) + ' ккал и лучший способ гасить перебор по еде.',
+      'walk', walkMin);
+  } else if (!isTrain || avail < 25){
+    push('walk', win.from,
+      'Ходьба — сколько влезет',
+      'Окно всего ' + win.minutes + ' мин. Иди быстрым шагом всё это время: даже 20 минут это ~110 ккал и держит привычку живой.',
+      'walk', Math.max(10, avail));
+  }
 
   // — вода в течение дня —
   push('water2', '13:00', 'Вода: половина нормы', 'К середине дня должно быть выпито ~' + Math.round(wtr/2/50)*50 + ' мл.', 'water', 1);
