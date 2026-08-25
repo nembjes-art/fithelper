@@ -5,6 +5,7 @@ import * as G from './gemini.js';
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
 const main = $('#main');
+const MODEL_FALLBACK = ['gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.1-pro-preview'];
 const TITLES = { today:'Сегодня', food:'Дневник еды', weight:'Вес', plan:'План', stats:'Итоги', settings:'Настройки' };
 let view = 'today';
 
@@ -99,7 +100,12 @@ function viewToday(){
   const pr = E.progress();
   const left = tg.kcal - dt.kcal;
   const water = S.waterFor(d);
+  const health = S.healthFor(d);
+  const burned = E.burnedToday(d);
+  const bonus = Math.max(0, burned - tg.activityKcal);
+  const balance = Math.round(dt.kcal - (tg.tdee + burned - tg.activityKcal));
   const slots = E.ensureSchedule(d);
+  const pz = E.praise();
   const done = S.doneFor(d);
   const wToday = S.weightFor(d);
 
@@ -109,6 +115,9 @@ function viewToday(){
   main.innerHTML =
   '<div class="view">' +
     '<div class="verdict '+v.kind+'"><div class="t">'+esc(v.title)+'</div><div class="d">'+esc(v.text)+'</div></div>' +
+
+    (pz.length ? '<div class="verdict ok"><div class="t">'+esc(pz[0].big)+'</div><div class="d">'+esc(pz[0].text)+
+      (pz[1] ? '<br><b style="color:var(--ok)">'+esc(pz[1].big)+'</b> — '+esc(pz[1].text) : '')+'</div></div>' : '') +
 
     '<div class="card"><div class="budget">' +
       ring(pctEaten, (left<0?'+':'') + num(Math.abs(left)), left<0?'перебор':'осталось', ringColor) +
@@ -121,7 +130,34 @@ function viewToday(){
     '<div class="btn-row mt">' +
       '<button class="btn primary" id="t-photo">Фото еды</button>' +
       '<button class="btn" id="t-manual">Вручную</button>' +
+    '</div>' +
+    '<div class="btn-row mt">' +
+      '<button class="btn ok" id="t-what">Что съесть?</button>' +
+      '<button class="btn" id="t-can">Можно ли?</button>' +
     '</div></div>' +
+
+    '<div class="card">' +
+      '<div class="row between mb"><h2 style="margin:0">Движение</h2>' +
+        '<span class="badge '+(health.steps >= 10000 ? 'ok' : (health.steps >= 6000 ? 'warn' : 'bad'))+'">'+num(health.steps)+' шагов</span></div>' +
+      meter('Шаги', health.steps, 10000, 'шагов', health.steps>=10000?'ok':'accent') +
+      '<div class="row between mt"><span class="small muted">Сожжено движением</span>' +
+        '<b class="small">'+num(burned)+' ккал'+(bonus>50?' <span style="color:var(--ok)">(+'+num(bonus)+' сверх плана)</span>':'')+'</b></div>' +
+      '<div class="row mt"><input type="number" id="t-steps" class="grow" placeholder="вбить шаги вручную" inputmode="numeric">' +
+        '<button class="btn sm" id="t-steps-save">ОК</button></div>' +
+      '<div class="tiny dim mt">Шаги можно закинуть одним тапом через ярлык «Команды» — как настроить, в Настройках.</div>' +
+    '</div>' +
+
+    '<div class="card"><div class="row between mb"><h2 style="margin:0">Баланс дня</h2>' +
+      '<span class="badge '+(balance <= 0 ? 'ok':'bad')+'">'+(balance<=0?'−':'+')+num(Math.abs(balance))+' ккал</span></div>' +
+      '<div class="grid3">' +
+        '<div class="stat"><b>'+num(dt.kcal)+'</b><span>съедено</span></div>' +
+        '<div class="stat"><b>'+num(tg.tdee + burned - tg.activityKcal)+'</b><span>потрачено</span></div>' +
+        '<div class="stat" style="background:'+(balance<=0?'var(--ok-soft)':'var(--bad-soft)')+'"><b>'+num(Math.abs(balance))+'</b><span>'+(balance<=0?'дефицит':'профицит')+'</span></div>' +
+      '</div>' +
+      '<div class="tiny dim mt">'+(balance<=0
+        ? 'Дефицит держится. Таким темпом — '+num(Math.abs(balance)*7/7700, 2)+' кг жира в неделю.'
+        : 'Сегодня ты в плюсе. Один такой день ничего не ломает — два подряд ломают неделю.')+'</div>' +
+    '</div>' +
 
     '<div class="card"><div class="row between"><h2 style="margin:0">Вода</h2>' +
       '<span class="small muted">'+num(water)+' / '+num(tg.water)+' мл</span></div>' +
@@ -153,6 +189,13 @@ function viewToday(){
 
   $('#t-photo').onclick = openPhoto;
   $('#t-manual').onclick = openManual;
+  $('#t-what').onclick = openSuggest;
+  $('#t-can').onclick = openJudge;
+  $('#t-steps-save').onclick = () => {
+    const v = parseInt($('#t-steps').value, 10);
+    if (!(v >= 0 && v < 200000)) return toast('Введи количество шагов');
+    S.setHealth(d, { steps: v }); toast('Записано'); render();
+  };
   $('#t-water').onclick = e => {
     const g = e.target.closest('.glass'); if(!g) return;
     const i = Number(g.dataset.i);
@@ -338,6 +381,89 @@ function showConfirm(items, note, closeParent, dataUrl){
         cl(); toast('Записано в дневник'); render();
       };
     });
+}
+
+/* ================= ЧТО СЪЕСТЬ ================= */
+function openSuggest(){
+  const { el, close } = sheet('Что съесть',
+    '<label class="f"><span>Чего хочется? (не обязательно)</span>' +
+      '<input type="text" id="sg-wish" placeholder="сладкого / мяса / что-то быстрое"></label>' +
+    '<button class="btn primary block" id="sg-go">Спросить</button>' +
+    '<div id="sg-out" class="mt"></div>');
+
+  const run = async () => {
+    const btn = $('#sg-go', el);
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Думаю…';
+    try{
+      const r = await G.suggestMeal(E.todayContext(), $('#sg-wish', el).value.trim());
+      $('#sg-out', el).innerHTML =
+        (r.verdict ? '<div class="verdict blue"><div class="d">'+esc(r.verdict)+'</div></div>' : '') +
+        (r.options||[]).map((o,i) =>
+          '<div class="card" style="margin-bottom:8px">' +
+            '<div class="row between mb"><b>'+esc(o.name)+'</b><span class="badge accent">'+num(o.kcal)+' ккал</span></div>' +
+            '<div class="tiny dim mb">Б '+num(o.p,1)+' · Ж '+num(o.f,1)+' · У '+num(o.c,1)+'</div>' +
+            '<div class="small muted">'+esc(o.why||'')+'</div>' +
+            (o.how ? '<div class="tiny dim mt">'+esc(o.how)+'</div>' : '') +
+            '<button class="btn sm block mt" data-eat="'+i+'">Съел это — записать</button>' +
+          '</div>').join('');
+      const opts = r.options || [];
+      $$('[data-eat]', el).forEach(b => b.onclick = () => {
+        const o = opts[Number(b.dataset.eat)];
+        S.addFood({ name:o.name, grams:0, kcal:o.kcal, p:o.p, f:o.f, c:o.c, src:'ai-suggest' });
+        close(); toast('Записано'); render();
+      });
+      btn.disabled = false; btn.textContent = 'Спросить ещё раз';
+    }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; toast(e.message); }
+  };
+  $('#sg-go', el).onclick = run;
+  run();
+}
+
+/* ================= МОЖНО ЛИ ================= */
+function openJudge(){
+  const { el, close } = sheet('Можно ли это съесть',
+    '<label class="f"><span>Что хочешь съесть</span>' +
+      '<input type="text" id="jd-t" placeholder="шаурма / два куска пиццы / банан"></label>' +
+    '<button class="btn primary block" id="jd-go">Спросить</button>' +
+    '<div id="jd-out" class="mt"></div>');
+
+  const inp = $('#jd-t', el);
+  setTimeout(()=>inp.focus(), 100);
+  inp.onkeydown = e => { if (e.key === 'Enter') $('#jd-go', el).click(); };
+
+  $('#jd-go', el).onclick = async () => {
+    const t = inp.value.trim();
+    if (!t) return toast('Напиши, что хочешь съесть');
+    const btn = $('#jd-go', el);
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Считаю…';
+
+    // локальный приговор считаем сами — он не врёт и работает без сети
+    try{
+      const r = await G.judgeFood(t, E.todayContext());
+      const local = E.ruleFood(r.kcal || 0, r.p);
+      const v = String(r.verdict||'').toLowerCase();
+      const kind = local.level === 'no' ? 'bad' : (local.level === 'half' ? 'warn' : 'ok');
+      const title = local.level === 'no' ? 'НЕЛЬЗЯ' : (local.level === 'half' ? 'ПОЛОВИНУ' : 'МОЖНО');
+
+      $('#jd-out', el).innerHTML =
+        '<div class="verdict '+kind+'"><div class="t">'+title+' — '+esc(r.name||t)+' ≈ '+num(r.kcal)+' ккал</div>' +
+        '<div class="d">'+esc(local.text)+'</div></div>' +
+        (r.reason ? '<div class="card"><div class="small muted">'+esc(r.reason)+'</div>' +
+          (r.alternative ? '<div class="small mt" style="color:var(--ok)">Вместо этого: '+esc(r.alternative)+'</div>' : '') + '</div>' : '') +
+        (local.level !== 'no'
+          ? '<button class="btn block" id="jd-eat">' + (local.level==='half' ? 'Съел половину — записать' : 'Съел — записать') + '</button>'
+          : '<div class="tiny dim center">Записать это нельзя — сначала отработай или дождись завтра.</div>');
+
+      const eat = $('#jd-eat', el);
+      if (eat) eat.onclick = () => {
+        const k = local.level === 'half' ? 0.5 : 1;
+        S.addFood({ name:(r.name||t) + (k<1?' (половина)':''), grams:0,
+          kcal:(r.kcal||0)*k, p:(r.p||0)*k, f:(r.f||0)*k, c:(r.c||0)*k, src:'ai-judge' });
+        close(); toast('Записано'); render();
+      };
+      btn.disabled = false; btn.textContent = 'Спросить про другое';
+    }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; toast(e.message); }
+  };
 }
 
 /* ================= ДНЕВНИК ЕДЫ ================= */
@@ -588,26 +714,75 @@ function applySchedule(r){
 }
 
 /* ================= ИТОГИ ================= */
+let statsPeriod = 7;
+
 function viewStats(){
   const tg = E.targets();
   const pr = E.progress();
   const rev = E.weeklyReview();
-  const p = S.profile;
-
-  // сводка за 7 дней
-  const days = Array.from({length:7}, (_,i)=> addDays(todayISO(), -6+i));
-  const rows = days.map(d => {
-    const t = E.dayTotals(d);
-    const w = S.weightFor(d);
-    return { d, kcal:t.kcal, p:t.p, w, water:S.waterFor(d), done:S.doneFor(d).length, logged:t.n>0 };
-  });
-  const loggedDays = rows.filter(r=>r.logged);
-  const avgKcal = loggedDays.length ? Math.round(loggedDays.reduce((a,r)=>a+r.kcal,0)/loggedDays.length) : 0;
-  const avgP = loggedDays.length ? Math.round(loggedDays.reduce((a,r)=>a+r.p,0)/loggedDays.length) : 0;
-  const adherence = Math.round(loggedDays.length/7*100);
+  const ps  = E.periodStats(statsPeriod);
+  const pz  = E.praise();
+  const st  = E.streaks();
+  const p   = S.profile;
+  const label = statsPeriod === 1 ? 'сегодня' : (statsPeriod === 7 ? 'за неделю' : 'за месяц');
 
   main.innerHTML =
   '<div class="view">' +
+
+    '<div class="card" style="border-color:var(--ok)">' +
+      '<h2 style="color:var(--ok)">Тебе есть чем гордиться</h2>' +
+      pz.map(x => '<div class="row mb" style="align-items:flex-start;gap:10px">' +
+        '<span class="badge ok" style="white-space:nowrap;margin-top:1px">'+esc(x.big)+'</span>' +
+        '<span class="small muted grow">'+esc(x.text)+'</span></div>').join('') +
+    '</div>' +
+
+    '<div class="chips mb" id="s-per">' +
+      [[1,'Сутки'],[7,'Неделя'],[30,'Месяц']].map(([v,t]) =>
+        '<button class="chip'+(statsPeriod===v?' on':'')+'" data-p="'+v+'">'+t+'</button>').join('') +
+    '</div>' +
+
+    '<div class="card"><h2>Сводка '+esc(label)+'</h2>' +
+      '<div class="grid2 mb">' +
+        '<div class="stat"><b>'+num(ps.avgKcal)+'</b><span>съедено, ккал/день</span></div>' +
+        '<div class="stat"><b>'+num(tg.tdee + ps.avgBurn - ps.planBurn)+'</b><span>потрачено, ккал/день</span></div>' +
+        '<div class="stat" style="background:'+(ps.avgDeficit>0?'var(--ok-soft)':'var(--bad-soft)')+'"><b>'+num(Math.abs(ps.avgDeficit))+'</b><span>'+(ps.avgDeficit>0?'дефицит':'профицит')+', ккал/день</span></div>' +
+        '<div class="stat"><b>'+(ps.weightDelta!==null?(ps.weightDelta>0?'+':'')+num(ps.weightDelta,2):'—')+'</b><span>вес, кг '+esc(label)+'</span></div>' +
+      '</div>' +
+      '<div class="grid3">' +
+        '<div class="stat"><b>'+num(ps.avgSteps)+'</b><span>шагов/день</span></div>' +
+        '<div class="stat"><b>'+num(ps.avgProt)+'</b><span>белка, г/день</span></div>' +
+        '<div class="stat"><b>'+ps.adherence+'%</b><span>дней записано</span></div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="card"><h2>План против факта</h2>' +
+      '<div class="row between mb"><span class="small muted">Сожжено движением ' + esc(label) + '</span>' +
+        '<span class="badge '+(ps.burnPct>=100?'ok':(ps.burnPct>=70?'warn':'bad'))+'">'+ps.burnPct+'% от плана</span></div>' +
+      (ps.rows.length >= 2 ? '<div class="chart-wrap">'+burnChart(ps)+'</div>'
+                           : '<div class="empty">Данных пока нет</div>') +
+      '<div class="tiny dim mt">Серая пунктирная — сколько ты должен был сжечь по плану ('+num(ps.planBurn)+' ккал/день). ' +
+        'Оранжевая — сколько сжёг на самом деле. ' +
+        (ps.burnPct >= 100
+          ? 'Ты перевыполняешь план — эти калории движок отдаёт тебе обратно в виде еды.'
+          : 'Каждый день ниже пунктира — это дефицит, который не случился.') + '</div>' +
+    '</div>' +
+
+    '<div class="card"><h2>Еда против лимита</h2>' +
+      (ps.rows.length >= 2 ? '<div class="chart-wrap">'+intakeChart(ps)+'</div>'
+                           : '<div class="empty">Данных пока нет</div>') +
+      '<div class="tiny dim mt">Зелёный столбик — уложился в лимит, красный — перебор, пустой — день не записан.</div>' +
+    '</div>' +
+
+    '<div class="card"><h2>Серии</h2>' +
+      '<div class="grid2">' +
+        '<div class="stat"><b>'+st.logged+'</b><span>дней подряд ведёшь дневник</span></div>' +
+        '<div class="stat"><b>'+st.inLimit+'</b><span>дней подряд в лимите</span></div>' +
+        '<div class="stat"><b>'+st.weighed+'</b><span>дней подряд взвешиваешься</span></div>' +
+        '<div class="stat"><b>'+st.steps+'</b><span>дней подряд 8000+ шагов</span></div>' +
+      '</div>' +
+      '<div class="tiny dim mt">Серия — единственная метрика, которую нельзя нагнать потом. Порвал — начинай с единицы.</div>' +
+    '</div>' +
+
     rev.map(r => '<div class="verdict '+r.kind+'"><div class="t">'+esc(r.t)+'</div><div class="d">'+esc(r.d)+'</div></div>').join('') +
 
     '<div class="card"><h2>Твоя стратегия сейчас</h2>' +
@@ -627,19 +802,6 @@ function viewStats(){
       '</div>' +
     '</div>' +
 
-    '<div class="card"><h2>Последние 7 дней</h2>' +
-      '<div class="grid3 mb">' +
-        '<div class="stat"><b>'+num(avgKcal)+'</b><span>ккал в среднем</span></div>' +
-        '<div class="stat"><b>'+num(avgP)+'</b><span>белка в среднем</span></div>' +
-        '<div class="stat"><b>'+adherence+'%</b><span>дней записано</span></div>' +
-      '</div>' +
-      '<ul class="list" style="margin:0 -14px -14px">' + rows.map(r =>
-        '<li><div class="grow"><div class="nm">'+dowRu(r.d)+', '+fmtDate(r.d)+'</div>' +
-        '<div class="mt2">'+(r.logged ? 'Б '+num(r.p)+' г · вода '+num(r.water)+' мл · заданий '+r.done : 'нет записей')+'</div></div>' +
-        '<div class="kcal" style="color:'+(!r.logged?'var(--dim)':(r.kcal>tg.kcal?'var(--bad)':'var(--ok)'))+'">'+(r.logged?num(r.kcal):'—')+'</div></li>'
-      ).join('') + '</ul>' +
-    '</div>' +
-
     '<div class="card"><h2>Прогноз</h2>' +
       '<div class="grid2">' +
         '<div class="stat"><b>'+fmtDate(pr.eta)+'</b><span>дата '+p.goalWeight+' кг</span></div>' +
@@ -656,7 +818,74 @@ function viewStats(){
     '<button class="btn block" id="s-settings">Настройки</button>' +
   '</div>';
 
+  $('#s-per').onclick = e => {
+    const b = e.target.closest('.chip'); if(!b) return;
+    statsPeriod = Number(b.dataset.p); render();
+  };
   $('#s-settings').onclick = () => go('settings');
+}
+
+/* ---------- график: план vs факт сожжённых калорий ---------- */
+function burnChart(ps){
+  const rows = ps.rows, W = 520, H = 170, L = 36, R = 10, T = 12, B = 22;
+  const max = Math.max(ps.planBurn * 1.4, ...rows.map(r=>r.burnReal), 100);
+  const x = i => L + (rows.length<2?0:i*(W-L-R)/(rows.length-1));
+  const y = v => T + (1 - v/max) * (H-T-B);
+
+  const grid = [0,0.5,1].map(f => {
+    const v = max*(1-f), yy = y(v);
+    return '<line class="grid-l" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"/>' +
+           '<text x="2" y="'+(yy+3).toFixed(1)+'">'+Math.round(v)+'</text>';
+  }).join('');
+
+  const planY = y(ps.planBurn);
+  const plan = '<line class="plan-l" x1="'+L+'" y1="'+planY.toFixed(1)+'" x2="'+(W-R)+'" y2="'+planY.toFixed(1)+'"/>';
+
+  const bw = Math.max(3, Math.min(22, (W-L-R)/rows.length - 3));
+  const bars = rows.map((r,i) => {
+    const yy = y(r.burnReal), hh = Math.max(0, H-B-yy);
+    const over = r.burnReal >= ps.planBurn;
+    return '<rect x="'+(x(i)-bw/2).toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hh.toFixed(1)+
+      '" rx="2" fill="'+(over?'var(--ok)':'var(--accent)')+'" opacity="'+(r.burnReal?0.9:0.15)+'"/>';
+  }).join('');
+
+  const labels = [0, Math.floor((rows.length-1)/2), rows.length-1].filter((v,i,a)=>a.indexOf(v)===i)
+    .map(i => '<text x="'+x(i).toFixed(1)+'" y="'+(H-5)+'" text-anchor="'+(i===0?'start':(i===rows.length-1?'end':'middle'))+'">'+fmtDate(rows[i].date)+'</text>').join('');
+
+  return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="height:170px">' +
+    grid + bars + plan + labels + '</svg>';
+}
+
+/* ---------- график: съедено vs лимит ---------- */
+function intakeChart(ps){
+  const rows = ps.rows, W = 520, H = 170, L = 40, R = 10, T = 12, B = 22;
+  const max = Math.max(ps.limit * 1.5, ...rows.map(r=>r.kcal), 100);
+  const x = i => L + (rows.length<2?0:i*(W-L-R)/(rows.length-1));
+  const y = v => T + (1 - v/max) * (H-T-B);
+
+  const grid = [0,0.5,1].map(f => {
+    const v = max*(1-f), yy = y(v);
+    return '<line class="grid-l" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"/>' +
+           '<text x="2" y="'+(yy+3).toFixed(1)+'">'+Math.round(v)+'</text>';
+  }).join('');
+
+  const limY = y(ps.limit);
+  const lim = '<line class="goal-l" x1="'+L+'" y1="'+limY.toFixed(1)+'" x2="'+(W-R)+'" y2="'+limY.toFixed(1)+'"/>' +
+              '<text x="'+(W-R-32)+'" y="'+(limY-5).toFixed(1)+'" style="fill:var(--ok)">лимит</text>';
+
+  const bw = Math.max(3, Math.min(22, (W-L-R)/rows.length - 3));
+  const bars = rows.map((r,i) => {
+    if (!r.logged) return '<rect x="'+(x(i)-bw/2).toFixed(1)+'" y="'+(H-B-6)+'" width="'+bw.toFixed(1)+'" height="6" rx="2" fill="var(--line)"/>';
+    const yy = y(r.kcal), hh = Math.max(0, H-B-yy);
+    return '<rect x="'+(x(i)-bw/2).toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hh.toFixed(1)+
+      '" rx="2" fill="'+(r.kcal > ps.limit ? 'var(--bad)' : 'var(--ok)')+'" opacity=".9"/>';
+  }).join('');
+
+  const labels = [0, Math.floor((rows.length-1)/2), rows.length-1].filter((v,i,a)=>a.indexOf(v)===i)
+    .map(i => '<text x="'+x(i).toFixed(1)+'" y="'+(H-5)+'" text-anchor="'+(i===0?'start':(i===rows.length-1?'end':'middle'))+'">'+fmtDate(rows[i].date)+'</text>').join('');
+
+  return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="height:170px">' +
+    grid + bars + lim + labels + '</svg>';
 }
 
 /* ================= НАСТРОЙКИ ================= */
@@ -668,12 +897,30 @@ function viewSettings(){
       '<label class="f"><span>API-ключ (хранится только на этом телефоне)</span>' +
         '<input type="password" id="st-key" value="'+esc(st.geminiKey)+'" placeholder="AIza…"></label>' +
       '<label class="f"><span>Модель</span><select id="st-model">' +
-        ['gemini-2.0-flash','gemini-2.5-flash','gemini-2.5-pro','gemini-1.5-flash'].map(m =>
-          '<option value="'+m+'"'+(st.geminiModel===m?' selected':'')+'>'+m+'</option>').join('') +
+        MODEL_FALLBACK.concat(MODEL_FALLBACK.includes(st.geminiModel)?[]:[st.geminiModel]).filter(Boolean).map(m =>
+          '<option value="'+esc(m)+'"'+(st.geminiModel===m?' selected':'')+'>'+esc(m)+'</option>').join('') +
       '</select></label>' +
+      '<button class="btn block mb" id="st-models">Обновить список моделей</button>' +
       '<div class="btn-row"><button class="btn" id="st-test">Проверить</button>' +
       '<button class="btn primary" id="st-savekey">Сохранить</button></div>' +
-      '<div class="tiny dim mt">Ключ берётся на aistudio.google.com. Он не уходит никуда, кроме Google — приложение работает целиком у тебя в браузере.</div>' +
+      '<div class="tiny dim mt">Ключ берётся на aistudio.google.com. Он не уходит никуда, кроме Google — приложение работает целиком у тебя в браузере.<br>' +
+      'Google периодически снимает старые модели. Если распознавание перестало работать — жми «Обновить список» и бери верхнюю.</div>' +
+    '</div>' +
+
+    '<div class="card"><h2>Шаги с iPhone</h2>' +
+      '<div class="tiny muted" style="line-height:1.6">Apple не пускает браузер в Здоровье напрямую, поэтому шаги закидывает ярлык «Команды». Настраивается один раз:<br><br>' +
+      '<b>1.</b> Открой приложение <b>Команды</b> → <b>+</b> → <b>Добавить действие</b><br>' +
+      '<b>2.</b> Найди <b>«Получить образцы Здоровья»</b>. Тип — <b>Шаги</b>, период — <b>Сегодня</b>, объединить — <b>Сумма</b><br>' +
+      '<b>3.</b> Ещё раз то же действие, но тип — <b>Активная энергия</b><br>' +
+      '<b>4.</b> Добавь действие <b>«Текст»</b> и впиши туда:<br>' +
+      '<code style="display:block;background:var(--surface-2);padding:8px;border-radius:6px;margin:6px 0;word-break:break-all;font-size:11px">' +
+        esc(location.origin + location.pathname) + '#steps=[Шаги]&active=[Энергия]</code>' +
+      'вместо [Шаги] и [Энергия] подставь результаты действий из пунктов 2 и 3<br>' +
+      '<b>5.</b> Добавь действие <b>«Открыть URL»</b><br>' +
+      '<b>6.</b> Назови ярлык «Шаги» и вынеси на экран «Домой»<br><br>' +
+      'Дальше — один тап по ярлыку, и цифры в приложении. Можно повесить автоматизацию на 22:00, чтобы делалось само.<br><br>' +
+      '<b>Если не сработает</b> — на экране «Сегодня» есть поле для ручного ввода шагов. Открыл Здоровье, посмотрел цифру, вбил. 10 секунд.</div>' +
+      '<button class="btn block mt" id="st-copyurl">Скопировать ссылку для ярлыка</button>' +
     '</div>' +
 
     '<div class="card"><h2>Параметры</h2>' +
@@ -707,6 +954,28 @@ function viewSettings(){
 
     '<button class="btn ghost block" id="st-back">Назад к итогам</button>' +
   '</div>';
+
+  $('#st-copyurl').onclick = async () => {
+    const url = location.origin + location.pathname + '#steps=[Шаги]&active=[Энергия]';
+    try { await navigator.clipboard.writeText(url); toast('Скопировано'); }
+    catch(_){ sheet('Ссылка для ярлыка', '<textarea readonly style="min-height:110px">'+esc(url)+'</textarea>' +
+      '<div class="tiny dim mt">Выдели и скопируй вручную.</div>'); }
+  };
+
+  $('#st-models').onclick = async () => {
+    S.setSettings({ geminiKey: $('#st-key').value.trim() });
+    const b = $('#st-models'); b.disabled = true; b.innerHTML = '<span class="spin"></span> Спрашиваю Google…';
+    try{
+      const list = await G.listModels();
+      if (!list.length) throw new Error('Google не вернул ни одной подходящей модели');
+      const sel = $('#st-model');
+      sel.innerHTML = list.map(m => '<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');
+      sel.value = list.includes(S.settings.geminiModel) ? S.settings.geminiModel : list[0];
+      S.setSettings({ geminiModel: sel.value });
+      toast('Доступно моделей: ' + list.length + '. Выбрана ' + sel.value);
+    }catch(e){ toast(e.message); }
+    b.disabled = false; b.textContent = 'Обновить список моделей';
+  };
 
   $('#st-savekey').onclick = () => {
     S.setSettings({ geminiKey: $('#st-key').value.trim(), geminiModel: $('#st-model').value });
@@ -746,6 +1015,27 @@ function viewSettings(){
   $('#st-back').onclick = () => go('stats');
 }
 
+/* ================= ПРИЁМ ДАННЫХ ИЗ «КОМАНД» iOS ================= */
+/* Ярлык открывает ссылку вида .../#steps=8432&active=520&date=2026-08-25 */
+function ingestHash(){
+  const raw = (location.hash || '').replace(/^#/, '');
+  if (!raw) return false;
+  const q = new URLSearchParams(raw);
+  const steps = q.get('steps'), active = q.get('active');
+  if (steps == null && active == null) return false;
+
+  const date = q.get('date') || todayISO();
+  const patch = {};
+  if (steps  != null && steps  !== '') patch.steps  = parseInt(String(steps).replace(/[^\d]/g,''), 10) || 0;
+  if (active != null && active !== '') patch.active = parseInt(String(active).replace(/[^\d]/g,''), 10) || 0;
+  S.setHealth(date, patch);
+
+  history.replaceState(null, '', location.pathname + location.search);
+  toast('С телефона получено: ' + (patch.steps ? patch.steps + ' шагов' : '') +
+        (patch.steps && patch.active ? ', ' : '') + (patch.active ? patch.active + ' ккал' : ''));
+  return true;
+}
+
 /* ================= СТАРТ ================= */
 if ('serviceWorker' in navigator){
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
@@ -753,6 +1043,8 @@ if ('serviceWorker' in navigator){
 // каждый новый день — свежий план и перерисовка
 let lastDay = todayISO();
 setInterval(() => { if (todayISO() !== lastDay){ lastDay = todayISO(); render(); } }, 60000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ ingestHash(); render(); } });
+window.addEventListener('hashchange', () => { if (ingestHash()) render(); });
 
+ingestHash();
 go('today');

@@ -11,13 +11,44 @@ export function bmr(p, weightKg){
 }
 
 /* ---------- оценочный TDEE (пока нет своих данных) ---------- */
-export function estimatedTDEE(p, weightKg){
+export function estimatedTDEE(p, weightKg, stepsOverride){
   const w = weightKg || p.startWeight;
   const b = bmr(p, w);
   // 1.20 = термоэффект пищи (~10%) + бытовая активность сидячего человека
-  const stepsAvg = (p.stepsWeekday*5 + p.stepsWeekend*2) / 7;
+  const stepsAvg = (stepsOverride != null && stepsOverride > 0)
+    ? stepsOverride
+    : (p.stepsWeekday*5 + p.stepsWeekend*2) / 7;
   const stepKcal = stepsAvg * (w/100) * 0.045;   // ~0.045 ккал/шаг на 100 кг веса
   return Math.round(b*1.20 + stepKcal);
+}
+
+/* ---------- средние шаги за последние 14 дней, если телефон их отдаёт ---------- */
+export function recentSteps(days = 14){
+  const today = todayISO();
+  const vals = [];
+  for (let i = 1; i <= days; i++){
+    const h = S.healthFor(addDays(today, -i));
+    if (h.steps > 0) vals.push(h.steps);
+  }
+  if (vals.length < 3) return null;
+  return Math.round(vals.reduce((a,b)=>a+b,0) / vals.length);
+}
+
+/* ---------- сколько сожжено сегодня сверх покоя (шаги + отмеченные тренировки) ---------- */
+export function burnedToday(date){
+  const d = date || todayISO();
+  const w = currentTrendWeight();
+  const h = S.healthFor(d);
+  if (h.active > 0) return h.active;                      // телефон посчитал сам — верим ему
+  let kcal = h.steps * (w/100) * 0.045;
+  const done = S.doneFor(d);
+  const slots = S.scheduleFor(d) || buildDay(d);
+  for (const sl of slots){
+    if (!done.includes(sl.id)) continue;
+    if (sl.kind === 'walk'  && h.steps === 0) kcal += (sl.minutes||0) * 6.1 * (w/100);
+    if (sl.kind === 'train') kcal += (sl.minutes||0) * 7.0 * (w/100);
+  }
+  return Math.round(kcal);
 }
 
 /* ---------- сколько сжигают запланированные тренировки, в среднем за день ---------- */
@@ -94,7 +125,7 @@ export function measuredTDEE(windowDays = 14){
 /* ---------- рабочий TDEE: измеренный, если есть; иначе оценка ---------- */
 export function workingTDEE(){
   const m = measuredTDEE(14);
-  const est = estimatedTDEE(S.profile, currentTrendWeight());
+  const est = estimatedTDEE(S.profile, currentTrendWeight(), recentSteps());
   if (m){
     // сглаживаем: 70% факта + 30% оценки, чтобы одна плохая неделя не швыряла план
     return { value: Math.round(m.tdee*0.7 + est*0.3), source: 'measured', detail: m, estimate: est };
@@ -225,6 +256,70 @@ export function verdict(){
   return { kind:'ok', title:'В графике', text:'Осталось ' + left + ' ккал и ' + Math.max(0, tg.protein - Math.round(dt.p)) + ' г белка. Держи темп.' };
 }
 
+/* ---------- приговор еде: можно / половину / нельзя ---------- */
+export function ruleFood(addKcal, addProtein){
+  const tg = targets();
+  const d  = todayISO();
+  const dt = dayTotals(d);
+  const burned = burnedToday(d);
+  const st = S.settings;
+
+  // реальный остаток: лимит + то, что реально сожжено движением сверх плана
+  const planned = tg.activityKcal;
+  const bonus = Math.max(0, burned - planned);          // перевыполнил план — заработал еду
+  const budget = tg.kcal + bonus;
+  const left = budget - dt.kcal;
+  const after = left - addKcal;
+
+  // окно питания
+  const now = new Date().toTimeString().slice(0,5);
+  const outsideWindow = st.eatWindowEnd && now > st.eatWindowEnd;
+
+  if (outsideWindow){
+    return { level:'no', kind:'bad', title:'НЕЛЬЗЯ — кухня закрыта',
+      text:'Сейчас ' + now + ', окно питания закрылось в ' + st.eatWindowEnd + '. Вода, чай без сахара. Вечерний голод — это привычка, и она ломается за 5–7 дней, если не кормить её ни разу.' };
+  }
+  if (after < -300){
+    return { level:'no', kind:'bad', title:'НЕЛЬЗЯ',
+      text:'Это выведет тебя за лимит на ' + Math.round(-after) + ' ккал. Такой перебор съедает почти весь дневной дефицит. Найди что-то на ' + Math.max(0,Math.round(left)) + ' ккал или иди на 40 минут быстрым шагом и возвращайся.' };
+  }
+  if (after < 0){
+    return { level:'half', kind:'warn', title:'ПОЛОВИНУ',
+      text:'Целиком — перебор на ' + Math.round(-after) + ' ккал. Половина порции укладывается. Остаток дня: ' + Math.max(0,Math.round(left)) + ' ккал.' };
+  }
+  if (addProtein != null && addKcal > 250 && addProtein < addKcal/100*4){
+    return { level:'ok', kind:'warn', title:'МОЖНО, но пусто',
+      text:'По калориям проходит (останется ' + Math.round(after) + '), но белка тут почти нет. Ты недоберёшь до ' + tg.protein + ' г и будешь голодный через час. Добавь к этому творог, яйца или мясо.' };
+  }
+  return { level:'ok', kind:'ok', title:'МОЖНО',
+    text:'Проходит. После этого останется ' + Math.round(after) + ' ккал' + (bonus > 50 ? ' (включая ' + Math.round(bonus) + ' ккал, которые ты сегодня отходил сверх плана)' : '') + '.' };
+}
+
+/* ---------- контекст для AI: что известно про сегодняшний день ---------- */
+export function todayContext(){
+  const d = todayISO();
+  const tg = targets();
+  const dt = dayTotals(d);
+  const burned = burnedToday(d);
+  const h = S.healthFor(d);
+  const bonus = Math.max(0, burned - tg.activityKcal);
+  return {
+    время: new Date().toTimeString().slice(0,5),
+    окно_питания_до: S.settings.eatWindowEnd,
+    лимит_ккал: tg.kcal + bonus,
+    съедено_ккал: Math.round(dt.kcal),
+    осталось_ккал: Math.round(tg.kcal + bonus - dt.kcal),
+    белок_цель_г: tg.protein,
+    белок_съедено_г: Math.round(dt.p),
+    белок_осталось_г: Math.max(0, tg.protein - Math.round(dt.p)),
+    шагов_сегодня: h.steps,
+    сожжено_движением_ккал: burned,
+    вес_кг: tg.weight,
+    съедено_сегодня: S.foodFor(d).map(f => f.name + ' ' + f.kcal + ' ккал'),
+    ограничения: S.profile.restrictions || 'нет'
+  };
+}
+
 /* ---------- какая рабочая неделя: утро или вечер ---------- */
 export function weekTypeFor(date){
   const st = S.settings;
@@ -323,6 +418,133 @@ export function ensureSchedule(date){
   return s;
 }
 
+/* ---------- сводка по периоду: сутки / неделя / месяц ---------- */
+export function periodStats(days){
+  const today = todayISO();
+  const tg = targets();
+  const rows = [];
+  for (let i = days - 1; i >= 0; i--){
+    const d = addDays(today, -i);
+    const t = dayTotals(d);
+    const h = S.healthFor(d);
+    const burned = burnedToday(d);
+    rows.push({
+      date: d,
+      kcal: Math.round(t.kcal),
+      protein: Math.round(t.p),
+      logged: t.n > 0,
+      steps: h.steps,
+      burnPlan: tg.activityKcal,
+      burnReal: burned,
+      water: S.waterFor(d),
+      weight: S.weightFor(d),
+      done: S.doneFor(d).length
+    });
+  }
+
+  const eaten   = rows.filter(r => r.logged);
+  const stepped = rows.filter(r => r.steps > 0);
+  const avg = (arr, k) => arr.length ? Math.round(arr.reduce((a,r)=>a+r[k],0)/arr.length) : 0;
+
+  const avgKcal   = avg(eaten, 'kcal');
+  const avgProt   = avg(eaten, 'protein');
+  const avgSteps  = avg(stepped, 'steps');
+  const avgBurn   = avg(stepped.length ? stepped : rows, 'burnReal');
+  const planBurn  = tg.activityKcal;
+
+  // изменение веса за период — по тренду
+  const tr = weightTrend();
+  const from = addDays(today, -(days-1));
+  const inRange = tr.filter(x => x.date >= from);
+  const weightDelta = inRange.length >= 2
+    ? +(inRange[inRange.length-1].trend - inRange[0].trend).toFixed(2) : null;
+
+  const totalBurnPlan = planBurn * days;
+  const totalBurnReal = rows.reduce((a,r)=>a+r.burnReal,0);
+
+  return {
+    days, rows,
+    avgKcal, avgProt, avgSteps, avgBurn, planBurn,
+    limit: tg.kcal,
+    loggedDays: eaten.length,
+    steppedDays: stepped.length,
+    adherence: Math.round(eaten.length/days*100),
+    weightDelta,
+    totalBurnPlan, totalBurnReal,
+    burnPct: totalBurnPlan ? Math.round(totalBurnReal/totalBurnPlan*100) : 0,
+    avgDeficit: eaten.length ? Math.round((tg.tdee + avgBurn - planBurn) - avgKcal) : 0
+  };
+}
+
+/* ---------- серии: сколько дней подряд не сорвался ---------- */
+export function streaks(){
+  const today = todayISO();
+  const count = (test) => {
+    let n = 0;
+    for (let i = 0; i < 120; i++){
+      const d = addDays(today, -i);
+      if (i === 0 && !test(d)) continue;   // сегодня ещё не закончилось — не рвём серию
+      if (test(d)) n++; else break;
+    }
+    return n;
+  };
+  const tg = targets();
+  return {
+    logged:  count(d => dayTotals(d).n > 0),
+    weighed: count(d => S.weightFor(d) !== null),
+    inLimit: count(d => { const t = dayTotals(d); return t.n > 0 && t.kcal <= tg.kcal + Math.max(0, burnedToday(d) - tg.activityKcal); }),
+    steps:   count(d => S.healthFor(d).steps >= 8000),
+    protein: count(d => { const t = dayTotals(d); return t.n > 0 && t.p >= tg.protein * 0.9; })
+  };
+}
+
+/* ---------- за что похвалить прямо сейчас ---------- */
+export function praise(){
+  const tg = targets();
+  const pr = progress();
+  const st = streaks();
+  const d  = todayISO();
+  const dt = dayTotals(d);
+  const h  = S.healthFor(d);
+  const burned = burnedToday(d);
+  const out = [];
+
+  if (pr.lost >= 1)
+    out.push({ big: num1(pr.lost) + ' кг', text: 'уже нет. Это не мотивация и не планы — это факт, который ты сделал.' });
+  if (st.logged >= 3)
+    out.push({ big: st.logged + ' ' + plural(st.logged,'день','дня','дней'), text: 'подряд ведёшь дневник. Именно на этом ломается 90% людей, а ты держишь.' });
+  if (st.inLimit >= 3)
+    out.push({ big: st.inLimit + ' ' + plural(st.inLimit,'день','дня','дней'), text: 'подряд в лимите. Так и выглядит результат до того, как его видно в зеркале.' });
+  if (st.weighed >= 5)
+    out.push({ big: st.weighed + ' ' + plural(st.weighed,'день','дня','дней'), text: 'подряд встаёшь на весы. Смотреть на цифру, когда она не радует, — отдельная смелость.' });
+  if (h.steps >= 10000)
+    out.push({ big: num(h.steps) + ' шагов', text: 'сегодня. Десятка взята — это ' + num(Math.round(burned)) + ' ккал, которые ты можешь съесть и не переживать.' });
+  else if (h.steps >= 8000)
+    out.push({ big: num(h.steps) + ' шагов', text: 'сегодня. До десятки осталось ' + num(10000-h.steps) + ' — это 15 минут ходьбы.' });
+  if (dt.p >= tg.protein)
+    out.push({ big: 'Белок закрыт', text: num(Math.round(dt.p)) + ' г. Это то, что решает, уйдёт у тебя жир или мышцы.' });
+  if (st.protein >= 3)
+    out.push({ big: st.protein + ' ' + plural(st.protein,'день','дня','дней'), text: 'подряд добираешь белок. Через месяц ты это увидишь не на весах, а в плечах.' });
+  if (pr.rate !== null && pr.rate > 0.5)
+    out.push({ big: num1(pr.rate) + ' кг/нед', text: 'реальный темп. Ты идёшь ровно туда, куда собирался.' });
+
+  if (!out.length){
+    if (dt.n > 0) out.push({ big: 'Начало есть', text: 'Ты записал сегодняшнюю еду. Звучит мелко — но это единственное, что отличает тех, кто дошёл, от тех, кто нет.' });
+    else out.push({ big: 'День ещё пустой', text: 'Запиши первый приём еды или вбей шаги — дальше приложению будет чем тебя хвалить.' });
+  }
+  return out;
+}
+
+function num(n){ return String(Math.round(Number(n)||0)); }
+function num1(n){ return (Math.round(Number(n)*10)/10).toFixed(1).replace('.', ','); }
+function plural(n, one, few, many){
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
+
 /* ---------- еженедельная ревизия стратегии ---------- */
 export function weeklyReview(){
   const pr = progress();
@@ -336,7 +558,7 @@ export function weeklyReview(){
   } else {
     const diff = m.tdee - tg.tdee;
     out.push({ kind:'ok', t:'Твой реальный расход: ' + m.tdee + ' ккал',
-      d:'Посчитано по факту: средний приход ' + m.avgIntake + ' ккал и изменение тренда ' + m.deltaKg + ' кг за ' + m.days + ' дн. Формула давала ' + estimatedTDEE(S.profile, pr.cur) + '.' });
+      d:'Посчитано по факту: средний приход ' + m.avgIntake + ' ккал и изменение тренда ' + m.deltaKg + ' кг за ' + m.days + ' дн. Формула давала ' + estimatedTDEE(S.profile, pr.cur, recentSteps()) + '.' });
     if (Math.abs(diff) > 200){
       out.push({ kind:'warn', t: diff < 0 ? 'Расход ниже ожидаемого' : 'Расход выше ожидаемого',
         d: diff < 0

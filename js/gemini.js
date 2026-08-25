@@ -33,6 +33,9 @@ async function call(parts, schema, systemText){
     try { const e = await res.json(); msg = (e.error && e.error.message) || msg; } catch(_){}
     if (res.status === 400 && /API key/i.test(msg)) msg = 'Ключ Gemini неверный или без доступа к модели.';
     if (res.status === 429) msg = 'Лимит запросов Gemini исчерпан. Подожди минуту.';
+    if (/no longer available|not found|is not supported|deprecated/i.test(msg)){
+      msg = 'Google снял эту модель. Настройки → Обновить список моделей → выбери верхнюю из списка.';
+    }
     throw new Error(msg);
   }
   const data = await res.json();
@@ -120,6 +123,92 @@ function normFood(i){
   return it;
 }
 
+/* ---------- что съесть прямо сейчас ---------- */
+const SUGGEST_SCHEMA = {
+  type:'object',
+  properties:{
+    verdict:{type:'string'},
+    options:{
+      type:'array',
+      items:{
+        type:'object',
+        properties:{
+          name:{type:'string'},
+          kcal:{type:'number'},
+          p:{type:'number'},
+          f:{type:'number'},
+          c:{type:'number'},
+          why:{type:'string'},
+          how:{type:'string'}
+        },
+        required:['name','kcal','p','f','c','why']
+      }
+    }
+  },
+  required:['options']
+};
+
+const SUGGEST_PROMPT = `Ты жёсткий, но неглупый тренер по питанию. Отвечаешь по-русски, коротко, на «ты».
+
+Тебе дают состояние дня человека: лимит калорий, сколько уже съедено, сколько осталось, цель по белку и сколько белка недобрано, сколько он прошёл, время суток и до скольки открыто окно питания.
+
+Задача: предложить 3 варианта еды, которые:
+- укладываются в остаток калорий (ни один вариант не должен выводить за лимит);
+- максимально закрывают недобор белка — это главный приоритет;
+- реалистичны для обычного человека в Эстонии: продукты из Rimi/Selver/Maxima, готовка максимум 15 минут;
+- подходят по времени суток (в 22:00 не предлагать полноценный обед).
+
+Если осталось меньше 150 ккал — не выдумывай еду: в options верни один вариант с водой/чаем и честно скажи в verdict, что на сегодня еда закончилась.
+
+Правила полей:
+- name — коротко, с граммовкой: «Творог 5% 200 г + горсть черники»
+- kcal/p/f/c — числа, честный расчёт на указанную порцию
+- why — одно предложение: почему именно это сейчас
+- how — как приготовить, одна строка; можно пусто если готовить нечего
+- verdict — одно-два предложения общего вердикта по дню
+
+Не читай морали и не извиняйся. Говори как тренер, который считает.`;
+
+export async function suggestMeal(ctx, wish){
+  const parts = [{ text: 'Состояние дня:\n' + JSON.stringify(ctx, null, 1) +
+    (wish ? '\n\nЧего хочется человеку: ' + wish : '') }];
+  return await call(parts, SUGGEST_SCHEMA, SUGGEST_PROMPT);
+}
+
+/* ---------- можно ли это съесть ---------- */
+const JUDGE_SCHEMA = {
+  type:'object',
+  properties:{
+    verdict:{type:'string'},
+    kcal:{type:'number'},
+    p:{type:'number'},
+    f:{type:'number'},
+    c:{type:'number'},
+    name:{type:'string'},
+    reason:{type:'string'},
+    alternative:{type:'string'}
+  },
+  required:['verdict','kcal','name','reason']
+};
+
+const JUDGE_PROMPT = `Ты жёсткий тренер по питанию. Отвечаешь по-русски, на «ты», коротко.
+
+Человек спрашивает, можно ли ему съесть конкретную вещь. Тебе дают состояние его дня.
+
+1. Оцени КБЖУ этой еды на реалистичную порцию (если порция не названа — бери обычную).
+2. verdict: ровно одно из «можно» / «половину» / «нельзя».
+   - «нельзя» если это выбивает за остаток калорий больше чем на 300 ккал, или если окно питания уже закрыто;
+   - «половину» если целиком не влезает, а половина влезает;
+   - «можно» если влезает.
+3. reason — одно-два предложения, по делу и с цифрами. Без морали.
+4. alternative — если «нельзя» или «половину», предложи конкретную замену, которая влезает и даёт больше белка. Иначе пусто.
+5. name — как это записать в дневник.`;
+
+export async function judgeFood(text, ctx){
+  const parts = [{ text: 'Человек спрашивает: "' + text + '"\n\nСостояние дня:\n' + JSON.stringify(ctx, null, 1) }];
+  return await call(parts, JUDGE_SCHEMA, JUDGE_PROMPT);
+}
+
 /* ---------- разбор графика (голос → текст → слоты) ---------- */
 const SCHED_SCHEMA = {
   type:'object',
@@ -181,6 +270,29 @@ export function fileToBase64(file, maxSide = 1024){
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось прочитать изображение.')); };
     img.src = url;
   });
+}
+
+/* ---------- какие модели реально доступны этому ключу ---------- */
+export async function listModels(){
+  const key = keyOrThrow();
+  const res = await fetch(BASE.replace(/\/$/, '') + '?key=' + encodeURIComponent(key) + '&pageSize=200');
+  if (!res.ok){
+    let msg = 'HTTP ' + res.status;
+    try { const e = await res.json(); msg = (e.error && e.error.message) || msg; } catch(_){}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const names = (data.models || [])
+    .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map(m => String(m.name || '').replace(/^models\//, ''))
+    // только текстово-визуальные генеративные: без эмбеддингов, картинок, речи
+    .filter(n => /^gemini-/.test(n) && !/(embedding|image|tts|audio|live|native-audio|thinking-exp)/.test(n))
+    .filter(n => !/^(gemini-1\.|gemini-2\.)/.test(n));
+
+  // новые версии наверх
+  const ver = n => { const m = n.match(/gemini-(\d+)\.?(\d*)/); return m ? Number(m[1])*100 + Number(m[2]||0) : 0; };
+  names.sort((a,b) => ver(b) - ver(a) || a.length - b.length || a.localeCompare(b));
+  return [...new Set(names)];
 }
 
 export async function testKey(){

@@ -18,7 +18,7 @@ const DEFAULTS = {
   },
   settings: {
     geminiKey: '',
-    geminiModel: 'gemini-2.0-flash',
+    geminiModel: 'gemini-3.7-flash',
     strictMode: true,         // жёсткий режим: запрет добора после лимита
     eatWindowStart: '10:00',
     eatWindowEnd: '20:00',
@@ -29,6 +29,7 @@ const DEFAULTS = {
   food: [],     // {id, date, time, name, kcal, p, f, c, grams, src}
   weights: [],  // {date, kg}
   water: {},    // {date: ml}
+  health: {},   // {date: {steps, active}} — из Apple Health через «Команды» или вручную
   done: {},     // {date: [slotId,...]}
   workouts: [], // {date, type, minutes, note}
   schedule: {}, // {date: [{id,time,title,desc,kind,minutes}]}
@@ -53,10 +54,18 @@ function deepMerge(base, over){
 let state = load();
 
 function load(){
+  // Google выключает старые модели — молча переводим на актуальную.
+  // Регулярка объявлена ВНУТРИ: load() вызывается при инициализации модуля,
+  // до того как выполнятся const на уровне файла.
+  const DEAD_MODELS = /^(gemini-1\.0|gemini-1\.5|gemini-2\.0|gemini-2\.5|gemini-pro)/;
   try{
     const raw = localStorage.getItem(KEY);
     if (!raw) return deepMerge(DEFAULTS, {});
-    return deepMerge(DEFAULTS, JSON.parse(raw));
+    const st = deepMerge(DEFAULTS, JSON.parse(raw));
+    if (st.settings && DEAD_MODELS.test(st.settings.geminiModel || '')){
+      st.settings.geminiModel = DEFAULTS.settings.geminiModel;
+    }
+    return st;
   }catch(e){
     console.warn('store load failed', e);
     return deepMerge(DEFAULTS, {});
@@ -139,6 +148,17 @@ export const S = {
     state.water[d] = Math.max(0, (state.water[d]||0) + ml); save();
   },
   setWater(ml, date){ state.water[date||todayISO()] = Math.max(0, ml); save(); },
+
+  /* шаги и активные калории с телефона */
+  healthFor(date){ return state.health[date || todayISO()] || { steps:0, active:0 }; },
+  setHealth(date, patch){
+    const d = date || todayISO();
+    const cur = state.health[d] || { steps:0, active:0 };
+    if (patch.steps  != null) cur.steps  = Math.max(0, Math.round(patch.steps));
+    if (patch.active != null) cur.active = Math.max(0, Math.round(patch.active));
+    state.health[d] = cur; save(); return cur;
+  },
+  get health(){ return state.health; },
 
   /* выполнение заданий */
   doneFor(date){ return state.done[date] || []; },
