@@ -9,9 +9,27 @@ function keyOrThrow(){
   return k;
 }
 
-async function call(parts, schema, systemText){
+// Текстовые задачи гоняем на самой лёгкой модели: у неё выше бесплатные лимиты
+// и она быстрее. Фото остаётся на основной — там нужна точность оценки порций.
+const LITE_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+
+async function call(parts, schema, systemText, opts){
+  const main = S.settings.geminiModel || 'gemini-3.7-flash';
+  const chain = (opts && opts.lite) ? LITE_MODELS.concat([main]) : [main];
+  let lastErr;
+  for (const m of chain){
+    try { return await callOnce(parts, schema, systemText, m); }
+    catch(e){
+      lastErr = e;
+      // модели нет у этого ключа — пробуем следующую; любая другая ошибка выходит сразу
+      if (!/снял эту модель|not found|no longer available|is not supported/i.test(e.message)) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+async function callOnce(parts, schema, systemText, model){
   const key = keyOrThrow();
-  const model = S.settings.geminiModel || 'gemini-2.0-flash';
   const body = {
     contents: [{ role: 'user', parts }],
     generationConfig: {
