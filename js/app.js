@@ -2,7 +2,7 @@
 import { S, todayISO, addDays, daysBetween, fmtDate, dowRu, isWeekend, mondayOf } from './store.js';
 import * as E from './engine.js';
 import * as G from './gemini.js';
-import { RECIPES, BY_SLOT, BY_ID } from './recipes.js';
+
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
 const main = $('#main');
@@ -25,6 +25,8 @@ function sleepHours(wake, bed){
 }
 
 const MODEL_FALLBACK = ['gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.1-pro-preview'];
+const FOOD_TAGS = ['Без рыбы','Без творога и молочки','Без свинины','Без говядины','Без грибов','Без бобовых','Без глютена','Без острого'];
+const RECIPE_COUNT = 15;
 const DOW_RU = ['','пн','вт','ср','чт','пт','сб','вс'];
 const DOW_FULL = ['','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
 const SLOT_RU = { breakfast:'Завтрак', lunch:'Обед', snack:'Перекус', dinner:'Ужин' };
@@ -547,15 +549,15 @@ function viewRation(){
   const dayCard = dow => {
     const day = (mp.assign || {})[String(dow)] || {};
     const ids = ['breakfast','lunch','snack','dinner'].map(sl => day[sl]);
-    const base = ids.reduce((s,id)=>s + ((BY_ID(id)||{}).kcal || 0), 0);
+    const base = ids.reduce((s,id)=>s + ((E.BY_ID(id)||{}).kcal || 0), 0);
     const k = base ? tg.kcal / base : 1;
-    const prot = Math.round(ids.reduce((s,id)=>s + ((BY_ID(id)||{}).p || 0), 0) * k);
+    const prot = Math.round(ids.reduce((s,id)=>s + ((E.BY_ID(id)||{}).p || 0), 0) * k);
     const isToday = dow === todayDow;
     return '<div class="card"'+(isToday?' style="border-color:var(--accent)"':'')+'>' +
       '<div class="row between mb"><b>'+esc(DOW_FULL[dow])+(isToday?' <span class="badge accent">сегодня</span>':'')+'</b>' +
         '<span class="badge '+(prot >= tg.protein*0.95 ? 'ok':'warn')+'">'+num(prot)+' г белка</span></div>' +
       ['breakfast','lunch','snack','dinner'].map(sl => {
-        const r = BY_ID(day[sl]);
+        const r = E.BY_ID(day[sl]);
         return '<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line)" data-pick="'+dow+'|'+sl+'">' +
           '<div class="grow"><div class="tiny dim">'+esc(SLOT_RU[sl])+'</div>' +
           '<div class="small">'+esc(r ? r.name : 'не выбрано')+'</div></div>' +
@@ -575,6 +577,21 @@ function viewRation(){
         '<button class="btn '+(mp.enabled?'':'primary')+'" id="r-toggle">'+(mp.enabled?'Выключить рацион':'Включить рацион')+'</button>' +
         '<button class="btn" id="r-regen">Пересобрать</button>' +
       '</div>' +
+    '</div>' +
+
+    '<div class="card"><h2>Что ты ешь</h2>' +
+      '<div class="tiny muted mb">AI соберёт рацион под это. Запреты соблюдаются строго — продукт из списка «не ем» не появится ни в одном блюде.</div>' +
+      '<div class="chips mb" id="r-tags">' +
+        FOOD_TAGS.map(t => '<button class="chip'+(((S.settings.food||{}).tags||[]).includes(t)?' on':'')+'" data-tag="'+esc(t)+'">'+esc(t)+'</button>').join('') +
+      '</div>' +
+      '<label class="f"><span>Не ем совсем</span>' +
+        '<input type="text" id="r-avoid" value="'+esc((S.settings.food||{}).avoid||'')+'" placeholder="печень, кинза, грибы"></label>' +
+      '<label class="f"><span>Люблю, ставь почаще</span>' +
+        '<input type="text" id="r-like" value="'+esc((S.settings.food||{}).like||'')+'" placeholder="курица, паста, острое"></label>' +
+      '<button class="btn primary block" id="r-ai">Собрать рацион под меня через AI</button>' +
+      (S.customRecipes.length ? '<div class="tiny mt" style="color:var(--ok)">Твоих блюд в библиотеке: '+S.customRecipes.length+'. Кнопка «Пересобрать» тасует именно их.</div>'
+                              : '<div class="tiny dim mt">Пока используется встроенная библиотека из '+RECIPE_COUNT+' блюд.</div>') +
+      '<div id="r-ai-out" class="mt"></div>' +
     '</div>' +
 
     '<div class="card"><h2>Дни готовки</h2>' +
@@ -610,8 +627,58 @@ function viewRation(){
     [1,2,3,4,5,6,7].map(dayCard).join('') +
   '</div>';
 
+  const saveFood = () => S.setSettings({ food: {
+    avoid: $('#r-avoid').value.trim(),
+    like:  $('#r-like').value.trim(),
+    tags:  ((S.settings.food||{}).tags)||[]
+  }});
+
+  $('#r-tags').onclick = e => {
+    const b = e.target.closest('.chip'); if(!b) return;
+    const t = b.dataset.tag;
+    const f = S.settings.food || { avoid:'', like:'', tags:[] };
+    const tags = (f.tags||[]).includes(t) ? f.tags.filter(x=>x!==t) : (f.tags||[]).concat([t]);
+    S.setSettings({ food: { avoid: $('#r-avoid').value.trim(), like: $('#r-like').value.trim(), tags } });
+    render();
+  };
+
+  $('#r-ai').onclick = async () => {
+    saveFood();
+    const btn = $('#r-ai');
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Собираю рацион…';
+    const tg = E.targets();
+    const f = S.settings.food || {};
+    try{
+      const r = await G.buildMealPlan({
+        лимит_ккал_в_день: tg.kcal,
+        белок_в_день_г: tg.protein,
+        вес_кг: tg.weight,
+        не_ем: [f.avoid, (f.tags||[]).join(', ')].filter(Boolean).join('; ') || 'нет',
+        люблю: f.like || 'нет особых пожеланий',
+        ограничения_здоровья: S.profile.restrictions || 'нет',
+        дней_готовки_в_неделю: (S.mealPlan.cookDays||[]).length
+      });
+      const dishes = E.adoptAiDishes(r.dishes);
+      const need = ['breakfast','lunch','snack','dinner'].filter(sl => !dishes.some(d => d.slot === sl));
+      if (need.length){
+        btn.disabled = false; btn.textContent = 'Попробовать ещё раз';
+        $('#r-ai-out').innerHTML = '<div class="verdict warn"><div class="t">Набор неполный</div>' +
+          '<div class="d">Модель не дала блюда для: '+need.map(x=>esc(SLOT_RU[x])).join(', ')+'. Нажми ещё раз.</div></div>';
+        return;
+      }
+      S.setCustomRecipes(dishes);
+      S.setMealPlan({ enabled: true, assign: E.autoPlanWeek(0, true) });
+      S.clearScheduleFrom(mondayOf(todayISO()));
+      render();
+      toast('Собрал ' + dishes.length + ' ' + plural(dishes.length,'блюдо','блюда','блюд') + ' под тебя');
+    }catch(e){
+      btn.disabled = false; btn.textContent = 'Повторить';
+      $('#r-ai-out').innerHTML = '<div class="verdict bad"><div class="t">Не вышло</div><div class="d">'+esc(e.message)+'</div></div>';
+    }
+  };
+
   $('#r-toggle').onclick = () => {
-    if (!mp.enabled && !Object.keys(mp.assign || {}).length) S.setMealPlan({ assign: E.autoPlanWeek(0) });
+    if (!mp.enabled && !Object.keys(mp.assign || {}).length) S.setMealPlan({ assign: E.autoPlanWeek(0, S.customRecipes.length > 0) });
     S.setMealPlan({ enabled: !mp.enabled });
     S.clearScheduleFrom(mondayOf(todayISO()));
     render();
@@ -619,7 +686,7 @@ function viewRation(){
   };
   $('#r-regen').onclick = () => {
     const seed = Math.floor((Date.now()/1000) % 97);
-    S.setMealPlan({ assign: E.autoPlanWeek(seed) });
+    S.setMealPlan({ assign: E.autoPlanWeek(seed, S.customRecipes.length > 0) });
     S.clearScheduleFrom(mondayOf(todayISO()));
     render(); toast('Собрал другой набор блюд');
   };
@@ -630,7 +697,7 @@ function viewRation(){
     cd = cd.includes(d) ? cd.filter(x=>x!==d) : cd.concat([d]);
     if (!cd.length) return toast('Хотя бы один день готовки нужен');
     if (cd.length > 3) return toast('Больше трёх дней готовки — это уже каждый день у плиты');
-    S.setMealPlan({ cookDays: cd.sort((x,y)=>x-y), assign: E.autoPlanWeek(0) });
+    S.setMealPlan({ cookDays: cd.sort((x,y)=>x-y), assign: E.autoPlanWeek(0, S.customRecipes.length > 0) });
     S.clearScheduleFrom(mondayOf(todayISO()));
     render();
   };
@@ -647,7 +714,7 @@ function viewRation(){
 
 function pickDish(dow, slot){
   const cur = S.mealFor(dow, slot);
-  const list = BY_SLOT(slot);
+  const list = E.BY_SLOT(slot);
   sheet(SLOT_RU[slot] + ' — ' + DOW_FULL[dow],
     list.map(r =>
       '<div class="card" style="margin-bottom:8px;'+(r.id===cur?'border-color:var(--accent)':'')+'" data-rid="'+r.id+'">' +

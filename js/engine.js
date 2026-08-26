@@ -1,6 +1,11 @@
 /* engine.js — вся математика: калории, TDEE, тренд веса, адаптация стратегии */
 import { S, todayISO, addDays, daysBetween, isWeekend, mondayOf } from './store.js';
-import { RECIPES, BY_SLOT, BY_ID } from './recipes.js';
+import { RECIPES, BY_SLOT as LIB_BY_SLOT, BY_ID as LIB_BY_ID } from './recipes.js';
+
+/* Библиотека блюд = встроенная + собранная AI под предпочтения */
+export function allRecipes(){ return RECIPES.concat(S.customRecipes || []); }
+export function BY_SLOT(slot){ return allRecipes().filter(function(r){ return r.slot === slot; }); }
+export function BY_ID(id){ return allRecipes().find(function(r){ return r.id === id; }) || null; }
 
 export const KCAL_PER_KG_FAT = 7700;
 
@@ -350,7 +355,9 @@ export function todayContext(){
     сожжено_движением_ккал: burned,
     вес_кг: tg.weight,
     съедено_сегодня: S.foodFor(d).map(f => f.name + ' ' + f.kcal + ' ккал'),
-    ограничения: S.profile.restrictions || 'нет'
+    ограничения: S.profile.restrictions || 'нет',
+    не_ем: [ (S.settings.food||{}).avoid, (((S.settings.food||{}).tags)||[]).join(', ') ].filter(Boolean).join('; ') || 'нет',
+    люблю: (S.settings.food||{}).like || 'нет особых пожеланий'
   };
 }
 
@@ -535,11 +542,48 @@ export function cookBlocks(){
   return blocks;
 }
 
+/* Превратить ответ AI в блюда библиотеки */
+export function adoptAiDishes(dishes){
+  const ok = ['breakfast','lunch','snack','dinner'];
+  const out = [];
+  (dishes || []).forEach(function(d, i){
+    if (!d || ok.indexOf(d.slot) < 0) return;
+    const num = v => { const n = Number(v); return isFinite(n) && n >= 0 ? n : 0; };
+    let kcal = Math.round(num(d.kcal));
+    const p = Math.round(num(d.p)), f = Math.round(num(d.f)), c = Math.round(num(d.c));
+    const fromMacros = p*4 + f*9 + c*4;
+    // если модель насчитала калории мимо БЖУ — доверяем БЖУ
+    if (fromMacros > 0 && Math.abs(fromMacros - kcal) > Math.max(60, kcal*0.25)) kcal = fromMacros;
+    const ing = (d.ing || [])
+      .filter(function(x){ return x && x.name; })
+      .map(function(x){ return [String(x.name), Math.round(num(x.qty)) || 1, String(x.unit || 'г')]; });
+    if (!ing.length) return;
+    out.push({
+      id: 'ai' + i + '_' + Math.random().toString(36).slice(2,6),
+      slot: d.slot, name: String(d.name || 'Блюдо').trim(),
+      kcal: kcal, p: p, f: f, c: c,
+      cookMin: Math.max(1, Math.min(120, Math.round(num(d.cookMin)) || 30)),
+      keeps: Math.max(0, Math.min(7, Math.round(num(d.keeps)))),
+      batch: !!d.batch,
+      how: String(d.how || '').trim(),
+      ing: ing, custom: true
+    });
+  });
+  return out;
+}
+
 /* Собрать неделю: один завтрак и один перекус на всю неделю,
    свой обед и ужин на каждый блок готовки. */
-export function autoPlanWeek(seed){
+export function autoPlanWeek(seed, preferCustom){
   const n = seed || 0;
-  const listOf = sl => BY_SLOT(sl);
+  const listOf = function(sl){
+    const all = BY_SLOT(sl);
+    if (preferCustom){
+      const mine = all.filter(function(r){ return r.custom; });
+      if (mine.length) return mine;
+    }
+    return all;
+  };
   const bf = listOf('breakfast')[n % listOf('breakfast').length];
   const sn = listOf('snack')[n % listOf('snack').length];
   const blocks = cookBlocks();

@@ -37,6 +37,8 @@ const DEFAULTS = {
       evening: { wake: '08:30', bed: '00:30' },
       weekend: { wake: '08:30', bed: '23:00' }
     },
+    // Пищевые предпочтения — их учитывает и AI при сборке рациона, и подсказки «что съесть»
+    food: { avoid: '', like: '', tags: [] },
     // Окно питания: первый и последний приём пищи. Пусто = считать от сна.
     eat: {
       morning: { from: '', to: '' },
@@ -53,6 +55,7 @@ const DEFAULTS = {
   workouts: [], // {date, type, minutes, note}
   schedule: {}, // {date: [{id,time,title,desc,kind,minutes}]}
   notes: [],    // {date, text}
+  customRecipes: [],   // блюда, собранные AI под предпочтения
   // Рацион: какое блюдо стоит в каком приёме пищи по дням недели (1=пн … 7=вс)
   mealPlan: {
     enabled: false,
@@ -236,6 +239,10 @@ export const S = {
   /* тренировки */
   addWorkout(w){ state.workouts.push({date: todayISO(), ...w}); save(); },
   get workouts(){ return state.workouts; },
+
+  /* свои блюда */
+  get customRecipes(){ return state.customRecipes || []; },
+  setCustomRecipes(list){ state.customRecipes = list || []; save(); },
 
   /* рацион */
   get mealPlan(){ return state.mealPlan; },

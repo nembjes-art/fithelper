@@ -227,6 +227,65 @@ export async function judgeFood(text, ctx){
   return await call(parts, JUDGE_SCHEMA, JUDGE_PROMPT, { lite:true });
 }
 
+/* ---------- сборка рациона под предпочтения ---------- */
+const PLAN_SCHEMA = {
+  type:'object',
+  properties:{
+    note:{type:'string'},
+    dishes:{
+      type:'array',
+      items:{
+        type:'object',
+        properties:{
+          slot:{type:'string'},
+          name:{type:'string'},
+          kcal:{type:'number'}, p:{type:'number'}, f:{type:'number'}, c:{type:'number'},
+          cookMin:{type:'number'}, keeps:{type:'number'}, batch:{type:'boolean'},
+          how:{type:'string'},
+          ing:{
+            type:'array',
+            items:{
+              type:'object',
+              properties:{ name:{type:'string'}, qty:{type:'number'}, unit:{type:'string'} },
+              required:['name','qty','unit']
+            }
+          }
+        },
+        required:['slot','name','kcal','p','f','c','cookMin','keeps','batch','how','ing']
+      }
+    }
+  },
+  required:['dishes']
+};
+
+const PLAN_PROMPT = `Ты собираешь недельный рацион для человека, который худеет и готовит впрок.
+
+Верни ровно такой набор блюд:
+- 2 завтрака (slot: "breakfast")
+- 4 обеда (slot: "lunch")
+- 4 ужина (slot: "dinner")
+- 2 перекуса (slot: "snack")
+
+Жёсткие требования:
+- Продукты — из обычного супермаркета в Эстонии (Rimi, Selver, Maxima, Prisma). Никакой экзотики.
+- Обеды и ужины должны готовиться ВПРОК и переживать хранение в контейнере: batch=true, keeps — честное число дней в холодильнике (мясо и птица 4, рыба 3, блюда с фасолью и томатом 5).
+- cookMin — реальное время готовки одной партии, не больше 60 минут (кроме тушёного мяса, там можно до 75).
+- Высокий белок: в обедах и ужинах не меньше 45 г белка на порцию, в завтраках не меньше 30, в перекусах не меньше 15.
+- kcal/p/f/c — на ОДНУ порцию. Числа должны биться между собой: белок×4 + жир×9 + углеводы×4 примерно равно kcal.
+- ing — состав одной порции. unit только "г", "мл" или "шт".
+- how — как готовить и как раскладывать по контейнерам, одно-два предложения, по-русски, на «ты».
+- Названия короткие и понятные, по-русски.
+
+ЗАПРЕТЫ пользователя соблюдай абсолютно: если продукт назван в списке «не ем» — его не должно быть ни в одном блюде, даже в следовых количествах и в составе соусов.
+Что он любит — старайся использовать, но не в ущерб белку и калориям.
+
+note — одно предложение: что ты учёл.`;
+
+export async function buildMealPlan(ctx){
+  const parts = [{ text: 'Данные человека:\n' + JSON.stringify(ctx, null, 1) }];
+  return await call(parts, PLAN_SCHEMA, PLAN_PROMPT, { lite:true });
+}
+
 /* ---------- разбор графика: превращаем речь в окна для тренировок ---------- */
 const SCHED_SCHEMA = {
   type:'object',
