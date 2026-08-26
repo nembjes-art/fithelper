@@ -2,6 +2,7 @@
 import { S, todayISO, addDays, daysBetween, fmtDate, dowRu, isWeekend, mondayOf } from './store.js';
 import * as E from './engine.js';
 import * as G from './gemini.js';
+import { RECIPES, BY_SLOT, BY_ID } from './recipes.js';
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
 const main = $('#main');
@@ -24,7 +25,12 @@ function sleepHours(wake, bed){
 }
 
 const MODEL_FALLBACK = ['gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.1-pro-preview'];
-const TITLES = { today:'Сегодня', food:'Дневник еды', weight:'Вес', plan:'План', stats:'Итоги', settings:'Настройки' };
+const DOW_RU = ['','пн','вт','ср','чт','пт','сб','вс'];
+const DOW_FULL = ['','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
+const SLOT_RU = { breakfast:'Завтрак', lunch:'Обед', snack:'Перекус', dinner:'Ужин' };
+function plural(n, a1, a2, a5){ const x=Math.abs(n)%100, y=x%10; if(x>10&&x<20)return a5; if(y>1&&y<5)return a2; if(y===1)return a1; return a5; }
+
+const TITLES = { today:'Сегодня', food:'Дневник еды', weight:'Вес', plan:'План', stats:'Итоги', settings:'Настройки', ration:'Рацион' };
 let view = 'today';
 
 /* ================= РОУТЕР ================= */
@@ -45,7 +51,7 @@ function render(){
   const sub = $('#viewSub');
   const w = E.currentWeight();
   sub.textContent = view === 'settings' ? '' : num(w,1) + ' кг → ' + S.profile.goalWeight + ' кг';
-  ({ today:viewToday, food:viewFood, weight:viewWeight, plan:viewPlan, stats:viewStats, settings:viewSettings }[view] || viewToday)();
+  ({ today:viewToday, food:viewFood, weight:viewWeight, plan:viewPlan, stats:viewStats, settings:viewSettings, ration:viewRation }[view] || viewToday)();
 }
 
 /* ================= ОНБОРДИНГ ================= */
@@ -502,6 +508,7 @@ function viewFood(){
 
   main.innerHTML =
   '<div class="view">' +
+    '<button class="btn ok block mb" id="f-ration">Рацион на неделю и список покупок</button>' +
     '<div class="btn-row mb">' +
       '<button class="btn primary" id="f-photo">Фото еды</button>' +
       '<button class="btn" id="f-manual">Вручную</button>' +
@@ -523,9 +530,141 @@ function viewFood(){
     }).join('') +
   '</div>';
 
+  $('#f-ration').onclick = () => go('ration');
   $('#f-photo').onclick = openPhoto;
   $('#f-manual').onclick = openManual;
   bindFoodDelete();
+}
+
+/* ================= РАЦИОН ================= */
+function viewRation(){
+  const mp = S.mealPlan;
+  const tg = E.targets();
+  const sessions = E.cookingSessions();
+  const shop = E.shoppingList();
+  const todayDow = E.dowOf(todayISO());
+
+  const dayCard = dow => {
+    const day = (mp.assign || {})[String(dow)] || {};
+    const ids = ['breakfast','lunch','snack','dinner'].map(sl => day[sl]);
+    const base = ids.reduce((s,id)=>s + ((BY_ID(id)||{}).kcal || 0), 0);
+    const k = base ? tg.kcal / base : 1;
+    const prot = Math.round(ids.reduce((s,id)=>s + ((BY_ID(id)||{}).p || 0), 0) * k);
+    const isToday = dow === todayDow;
+    return '<div class="card"'+(isToday?' style="border-color:var(--accent)"':'')+'>' +
+      '<div class="row between mb"><b>'+esc(DOW_FULL[dow])+(isToday?' <span class="badge accent">сегодня</span>':'')+'</b>' +
+        '<span class="badge '+(prot >= tg.protein*0.95 ? 'ok':'warn')+'">'+num(prot)+' г белка</span></div>' +
+      ['breakfast','lunch','snack','dinner'].map(sl => {
+        const r = BY_ID(day[sl]);
+        return '<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line)" data-pick="'+dow+'|'+sl+'">' +
+          '<div class="grow"><div class="tiny dim">'+esc(SLOT_RU[sl])+'</div>' +
+          '<div class="small">'+esc(r ? r.name : 'не выбрано')+'</div></div>' +
+          '<span class="small muted" style="white-space:nowrap">'+(r?num(Math.round(r.kcal*k))+' ккал':'')+' ›</span>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  };
+
+  main.innerHTML =
+  '<div class="view">' +
+    '<div class="card">' +
+      '<div class="row between mb"><h2 style="margin:0">Рацион недели</h2>' +
+        '<span class="badge '+(mp.enabled?'ok':'warn')+'">'+(mp.enabled?'включён':'выключен')+'</span></div>' +
+      '<div class="tiny muted mb">Готовишь два раза в неделю и раскладываешь по контейнерам. Приложение подставит эти блюда в расписание дня и пересчитает граммовку под твой лимит — сейчас '+num(tg.kcal)+' ккал.</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn '+(mp.enabled?'':'primary')+'" id="r-toggle">'+(mp.enabled?'Выключить рацион':'Включить рацион')+'</button>' +
+        '<button class="btn" id="r-regen">Пересобрать</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="card"><h2>Дни готовки</h2>' +
+      '<div class="chips" id="r-cook">' +
+        [1,2,3,4,5,6,7].map(d => '<button class="chip'+((mp.cookDays||[]).includes(d)?' on':'')+'" data-cd="'+d+'">'+esc(DOW_RU[d])+'</button>').join('') +
+      '</div>' +
+      '<div class="tiny dim mt">Отметь дни, когда тебе удобно встать к плите. Неделя разобьётся на блоки, и каждый блок ты готовишь один раз. Два дня — оптимум: мясо в холодильнике живёт 3–4 дня.</div>' +
+    '</div>' +
+
+    sessions.map(s =>
+      '<div class="card"><div class="row between mb">' +
+        '<h2 style="margin:0">Готовка: '+esc(DOW_FULL[s.cookDow])+'</h2>' +
+        '<span class="badge blue">~'+num(s.totalMin)+' мин</span></div>' +
+      '<div class="tiny muted mb">Закрывает дни: '+s.days.map(d=>esc(DOW_RU[d])).join(', ')+'</div>' +
+      (s.dishes.length ? s.dishes.map(d =>
+        '<div style="padding:9px 0;border-bottom:1px solid var(--line)">' +
+          '<div class="row between"><b class="small">'+esc(d.recipe.name)+'</b>' +
+          '<span class="badge '+(d.tooLong?'warn':'ok')+'">'+d.portions+' '+plural(d.portions,'порция','порции','порций')+'</span></div>' +
+          '<div class="tiny dim mt">'+esc(d.recipe.how)+'</div>' +
+          (d.tooLong ? '<div class="tiny mt" style="color:var(--warn)">Хранится '+d.recipe.keeps+' '+plural(d.recipe.keeps,'день','дня','дней')+', а порций '+d.portions+'. Последние убери в морозилку сразу, а не когда запахнет.</div>' : '') +
+        '</div>').join('') : '<div class="empty">В этом блоке нечего готовить впрок</div>') +
+      '</div>').join('') +
+
+    '<div class="card"><div class="row between mb"><h2 style="margin:0">Список покупок</h2>' +
+      '<button class="btn sm ghost" id="r-copy">Скопировать</button></div>' +
+      '<ul class="list" style="margin:0 -14px -14px">' +
+        shop.map(i => '<li><span class="grow small">'+esc(i.name)+'</span><b class="small">'+num(i.qty, i.unit==='кг'?1:0)+' '+esc(i.unit)+'</b></li>').join('') +
+      '</ul>' +
+    '</div>' +
+
+    '<div class="card"><h2>Неделя по дням</h2>' +
+      '<div class="tiny muted">Нажми на любой приём пищи, чтобы поменять блюдо.</div></div>' +
+    [1,2,3,4,5,6,7].map(dayCard).join('') +
+  '</div>';
+
+  $('#r-toggle').onclick = () => {
+    if (!mp.enabled && !Object.keys(mp.assign || {}).length) S.setMealPlan({ assign: E.autoPlanWeek(0) });
+    S.setMealPlan({ enabled: !mp.enabled });
+    S.clearScheduleFrom(mondayOf(todayISO()));
+    render();
+    toast(!mp.enabled ? 'Рацион подставлен в расписание' : 'Вернул обычное меню');
+  };
+  $('#r-regen').onclick = () => {
+    const seed = Math.floor((Date.now()/1000) % 97);
+    S.setMealPlan({ assign: E.autoPlanWeek(seed) });
+    S.clearScheduleFrom(mondayOf(todayISO()));
+    render(); toast('Собрал другой набор блюд');
+  };
+  $('#r-cook').onclick = e => {
+    const b = e.target.closest('.chip'); if(!b) return;
+    const d = Number(b.dataset.cd);
+    let cd = (S.mealPlan.cookDays || []).slice();
+    cd = cd.includes(d) ? cd.filter(x=>x!==d) : cd.concat([d]);
+    if (!cd.length) return toast('Хотя бы один день готовки нужен');
+    if (cd.length > 3) return toast('Больше трёх дней готовки — это уже каждый день у плиты');
+    S.setMealPlan({ cookDays: cd.sort((x,y)=>x-y), assign: E.autoPlanWeek(0) });
+    S.clearScheduleFrom(mondayOf(todayISO()));
+    render();
+  };
+  $('#r-copy').onclick = async () => {
+    const text = E.shoppingList().map(i => i.name + ' — ' + (i.unit==='кг'?num(i.qty,1):num(i.qty)) + ' ' + i.unit).join('\n');
+    try { await navigator.clipboard.writeText(text); toast('Список в буфере'); }
+    catch(_){ sheet('Список покупок', '<textarea readonly style="min-height:280px">'+esc(text)+'</textarea>'); }
+  };
+  $$('[data-pick]').forEach(el => el.onclick = () => {
+    const [dow, slot] = el.dataset.pick.split('|');
+    pickDish(Number(dow), slot);
+  });
+}
+
+function pickDish(dow, slot){
+  const cur = S.mealFor(dow, slot);
+  const list = BY_SLOT(slot);
+  sheet(SLOT_RU[slot] + ' — ' + DOW_FULL[dow],
+    list.map(r =>
+      '<div class="card" style="margin-bottom:8px;'+(r.id===cur?'border-color:var(--accent)':'')+'" data-rid="'+r.id+'">' +
+        '<div class="row between mb"><b>'+esc(r.name)+'</b>' +
+        '<span class="badge '+(r.id===cur?'accent':'blue')+'">'+r.kcal+' ккал</span></div>' +
+        '<div class="tiny dim">Б '+r.p+' · Ж '+r.f+' · У '+r.c+' · готовка '+r.cookMin+' мин' +
+        (r.batch ? ' · впрок, хранится '+r.keeps+' '+plural(r.keeps,'день','дня','дней') : ' · готовится на месте') + '</div>' +
+        '<div class="small muted mt">'+esc(r.how)+'</div>' +
+      '</div>').join('') +
+    '<div class="tiny dim center">Калорийность подгонится под твой дневной лимит автоматически.</div>',
+    (m, close) => {
+      $$('[data-rid]', m).forEach(c => c.onclick = () => {
+        S.setMeal(dow, slot, c.dataset.rid);
+        S.clearScheduleFrom(mondayOf(todayISO()));
+        close(); render(); toast('Поставил');
+      });
+    });
 }
 
 /* ================= ВЕС ================= */

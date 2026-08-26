@@ -1,5 +1,6 @@
 /* engine.js — вся математика: калории, TDEE, тренд веса, адаптация стратегии */
 import { S, todayISO, addDays, daysBetween, isWeekend, mondayOf } from './store.js';
+import { RECIPES, BY_SLOT, BY_ID } from './recipes.js';
 
 export const KCAL_PER_KG_FAT = 7700;
 
@@ -494,37 +495,7 @@ export function eatEndFor(date){
 
 /* ---------- меню: разложено под 1840 ккал и 177 г белка при 104 кг ---------- */
 /* Порции считаются от текущих целей, поэтому меню едет вместе с весом. */
-function menu(){
-  const tg = targets();
-  const k = tg.kcal / 1840;          // масштаб под текущий лимит
-  const g = n => Math.round(n * k / 5) * 5;
-  return {
-    breakfast: {
-      title: 'Завтрак',
-      text: 'Скир или творог 0–5% ' + g(250) + ' г · овсянка ' + g(50) + ' г сухой · ягоды ' + g(100) + ' г. ' +
-            '≈ ' + Math.round(375*k) + ' ккал, ' + Math.round(33*k) + ' г белка.'
-    },
-    snack: {
-      title: 'Перекус — протеин',
-      text: 'Мерная ложка протеина на воде + яблоко или груша. ' +
-            '≈ ' + Math.round(200*k) + ' ккал, ' + Math.round(31*k) + ' г белка. ' +
-            'Это самый дешёвый способ добрать белок, не съев лишнего.'
-    },
-    lunch: {
-      title: 'Обед',
-      text: 'Куриная грудка или индейка ' + g(200) + ' г · рис/гречка ' + g(60) + ' г сухой · овощи ' + g(200) + ' г · чайная ложка масла. ' +
-            '≈ ' + Math.round(645*k) + ' ккал, ' + Math.round(65*k) + ' г белка.'
-    },
-    dinner: {
-      title: 'Ужин',
-      text: 'Рыба, индейка или творог ' + g(200) + ' г · овощи ' + g(300) + ' г · гречка ' + g(40) + ' г сухой. ' +
-            '≈ ' + Math.round(530*k) + ' ккал, ' + Math.round(48*k) + ' г белка. ' +
-            'Последняя еда за день — делай её белковой, тогда ночью не потянет к холодильнику.'
-    }
-  };
-}
-
-/* ---------- генератор плана дня ---------- */
+/* ---------- тренировочные блоки ---------- */
 const STRENGTH_A = {
   title: 'Силовая A — низ + спина',
   desc: 'Приседания 4×12 · Румынская тяга 4×12 · Выпады 3×12 на ногу · Тяга в наклоне 4×12 · Планка 3×45 сек. Отдых 60–75 сек.'
@@ -538,6 +509,156 @@ const INTERVALS = {
   desc: '10 мин разминка ходьбой · затем 8 циклов: 1 мин быстрый шаг в горку / бег, 2 мин спокойный шаг · 5 мин заминка.'
 };
 
+/* ================= РАЦИОН ================= */
+/* Неделя делится на блоки по дням готовки: приготовил один раз — ешь весь блок. */
+export function dowOf(date){
+  const d = new Date(date+'T12:00:00').getDay();
+  return d === 0 ? 7 : d;                        // 1=пн ... 7=вс
+}
+
+export function cookBlocks(){
+  const cd = (S.mealPlan.cookDays || [7,3]).slice().sort(function(a,b){ return a-b; });
+  const blocks = [];
+  for (let i = 0; i < cd.length; i++){
+    const cook = cd[i];
+    const next = cd[(i+1) % cd.length];
+    // день готовки входит в блок: приготовил и в этот же день ешь
+    const days = [];
+    let d = cook;
+    for (let n = 0; n < 7; n++){
+      days.push(d);
+      d = d % 7 + 1;
+      if (d === next) break;
+    }
+    if (days.length) blocks.push({ cookDow: cook, days: days });
+  }
+  return blocks;
+}
+
+/* Собрать неделю: один завтрак и один перекус на всю неделю,
+   свой обед и ужин на каждый блок готовки. */
+export function autoPlanWeek(seed){
+  const n = seed || 0;
+  const listOf = sl => BY_SLOT(sl);
+  const bf = listOf('breakfast')[n % listOf('breakfast').length];
+  const sn = listOf('snack')[n % listOf('snack').length];
+  const blocks = cookBlocks();
+  const lunches = listOf('lunch').filter(r => r.batch);
+  const dinners = listOf('dinner').filter(r => r.batch);
+
+  const assign = {};
+  blocks.forEach(function(b, i){
+    const L = lunches[(n + i) % lunches.length];
+    const D = dinners[(n + i) % dinners.length];
+    b.days.forEach(function(dow){
+      assign[String(dow)] = { breakfast: bf.id, lunch: L.id, snack: sn.id, dinner: D.id };
+    });
+  });
+  // дни готовки тоже надо чем-то кормить
+  for (let dow = 1; dow <= 7; dow++){
+    if (!assign[String(dow)]){
+      const L = lunches[n % lunches.length], D = dinners[n % dinners.length];
+      assign[String(dow)] = { breakfast: bf.id, lunch: L.id, snack: sn.id, dinner: D.id };
+    }
+  }
+  return assign;
+}
+
+/* Что и сколько готовить в каждый день готовки */
+export function cookingSessions(){
+  const plan = S.mealPlan.assign || {};
+  return cookBlocks().map(function(b){
+    const count = {};
+    b.days.forEach(function(dow){
+      const day = plan[String(dow)] || {};
+      ['breakfast','lunch','snack','dinner'].forEach(function(sl){
+        const r = BY_ID(day[sl]);
+        if (!r || !r.batch) return;               // что не готовится впрок, не считаем
+        count[r.id] = (count[r.id] || 0) + 1;
+      });
+    });
+    const dishes = Object.keys(count).map(function(id){
+      const r = BY_ID(id);
+      return { recipe: r, portions: count[id], tooLong: count[id] > r.keeps };
+    });
+    return {
+      cookDow: b.cookDow,
+      days: b.days,
+      dishes: dishes,
+      totalMin: dishes.reduce(function(a,d){ return a + d.recipe.cookMin; }, 0)
+    };
+  });
+}
+
+/* Список покупок на неделю с поправкой на твой лимит калорий */
+export function shoppingList(){
+  const plan = S.mealPlan.assign || {};
+  const tg = targets();
+  const acc = {};
+  for (let dow = 1; dow <= 7; dow++){
+    const day = plan[String(dow)] || {};
+    const ids = ['breakfast','lunch','snack','dinner'].map(function(sl){ return day[sl]; }).filter(Boolean);
+    const base = ids.reduce(function(a,id){ return a + ((BY_ID(id) || {}).kcal || 0); }, 0);
+    const k = base ? tg.kcal / base : 1;
+    ids.forEach(function(id){
+      const r = BY_ID(id); if (!r) return;
+      r.ing.forEach(function(arr){
+        const key = arr[0] + '|' + arr[2];
+        acc[key] = (acc[key] || 0) + arr[1] * (arr[2] === 'шт' ? 1 : k);
+      });
+    });
+  }
+  return Object.keys(acc).sort().map(function(key){
+    const parts = key.split('|');
+    const q = acc[key];
+    if (parts[1] === 'г' && q >= 1000) return { name: parts[0], qty: Math.round(q/100)/10, unit: 'кг' };
+    return { name: parts[0], qty: Math.round(q), unit: parts[1] };
+  });
+}
+
+/* ---------- меню дня ---------- */
+function dayMenu(date){
+  const tg = targets();
+  const plan = S.mealPlan;
+  const titles = { breakfast:'Завтрак', lunch:'Обед', snack:'Перекус', dinner:'Ужин' };
+
+  if (plan.enabled){
+    const day = (plan.assign || {})[String(dowOf(date))];
+    if (day){
+      const slots = ['breakfast','lunch','snack','dinner'];
+      const ids = slots.map(sl => day[sl]);
+      const base = ids.reduce((a,id) => a + ((BY_ID(id) || {}).kcal || 0), 0);
+      const k = base ? tg.kcal / base : 1;
+      const out = {};
+      slots.forEach((sl, i) => {
+        const r = BY_ID(ids[i]);
+        if (!r){ out[sl] = { title: titles[sl], text: 'Блюдо не выбрано — открой Рацион и поставь его.' }; return; }
+        const g = n => Math.round(n * k / 5) * 5;
+        const parts = r.ing.map(arr => arr[0] + ' ' + (arr[2] === 'шт' ? arr[1] : g(arr[1])) + ' ' + arr[2]).join(' · ');
+        out[sl] = {
+          title: titles[sl] + ' — ' + r.name,
+          text: parts + '. Примерно ' + Math.round(r.kcal*k) + ' ккал и ' + Math.round(r.p*k) + ' г белка.' +
+                (r.batch ? ' Достань контейнер, готовить ничего не надо.' : ' ' + r.how)
+        };
+      });
+      return out;
+    }
+  }
+
+  const k = tg.kcal / 1840;
+  const g = n => Math.round(n * k / 5) * 5;
+  return {
+    breakfast: { title:'Завтрак',
+      text:'Скир или творог 0-5% ' + g(250) + ' г, овсянка ' + g(50) + ' г сухой, ягоды ' + g(100) + ' г. Примерно ' + Math.round(375*k) + ' ккал и ' + Math.round(33*k) + ' г белка.' },
+    snack: { title:'Перекус - протеин',
+      text:'Мерная ложка протеина на воде плюс яблоко или груша. Примерно ' + Math.round(200*k) + ' ккал и ' + Math.round(31*k) + ' г белка.' },
+    lunch: { title:'Обед',
+      text:'Куриная грудка или индейка ' + g(200) + ' г, рис или гречка ' + g(60) + ' г сухой, овощи ' + g(200) + ' г, чайная ложка масла. Примерно ' + Math.round(645*k) + ' ккал и ' + Math.round(65*k) + ' г белка.' },
+    dinner: { title:'Ужин',
+      text:'Рыба, индейка или творог ' + g(200) + ' г, овощи ' + g(300) + ' г, гречка ' + g(40) + ' г сухой. Примерно ' + Math.round(530*k) + ' ккал и ' + Math.round(48*k) + ' г белка. Последняя еда за день - делай её белковой.' }
+  };
+}
+
 export function buildDay(date){
   const p = S.profile;
   const wt = weekTypeFor(date);
@@ -545,7 +666,7 @@ export function buildDay(date){
   const budget = p.timeBudgetMin || 75;
   const dow = new Date(date+'T12:00:00').getDay(); // 0 вс
   const shape = dayShape(date);
-  const M = menu();
+  const M = dayMenu(date);
   const wtr = waterTarget();
   const bodyW = currentTrendWeight();
   const slots = [];

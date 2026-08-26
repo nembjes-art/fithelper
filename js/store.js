@@ -53,6 +53,12 @@ const DEFAULTS = {
   workouts: [], // {date, type, minutes, note}
   schedule: {}, // {date: [{id,time,title,desc,kind,minutes}]}
   notes: [],    // {date, text}
+  // Рацион: какое блюдо стоит в каком приёме пищи по дням недели (1=пн … 7=вс)
+  mealPlan: {
+    enabled: false,
+    cookDays: [7, 3],        // дни готовки: воскресенье и среда
+    assign: {}               // { '1': {breakfast:'b1', lunch:'m1', snack:'s1', dinner:'d1'}, ... }
+  },
   log: []       // системный лог решений движка
 };
 
@@ -230,6 +236,19 @@ export const S = {
   /* тренировки */
   addWorkout(w){ state.workouts.push({date: todayISO(), ...w}); save(); },
   get workouts(){ return state.workouts; },
+
+  /* рацион */
+  get mealPlan(){ return state.mealPlan; },
+  setMealPlan(patch){ Object.assign(state.mealPlan, patch); save(); },
+  setMeal(dow, slot, recipeId){
+    const a = state.mealPlan.assign || (state.mealPlan.assign = {});
+    const d = a[String(dow)] || (a[String(dow)] = {});
+    d[slot] = recipeId; save();
+  },
+  mealFor(dow, slot){
+    const d = (state.mealPlan.assign || {})[String(dow)];
+    return d ? d[slot] : null;
+  },
 
   /* лог движка */
   pushLog(entry){
