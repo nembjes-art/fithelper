@@ -29,6 +29,13 @@ const DEFAULTS = {
       morning: { from: '17:30', to: '19:00' },   // неделя со сменой 7–16
       evening: { from: '10:00', to: '12:00' },   // неделя со сменой 15–00
       weekend: { from: '11:00', to: '13:00' }
+    },
+    // Сон задаёт весь остальной день: от подъёма и отбоя считаются приёмы пищи,
+    // окно питания, вода и время добавок.
+    sleep: {
+      morning: { wake: '06:00', bed: '22:30' },
+      evening: { wake: '08:30', bed: '00:30' },
+      weekend: { wake: '08:30', bed: '23:00' }
     }
   },
   // Массивы записей
@@ -140,6 +147,11 @@ export const S = {
 
   setProfile(patch){ Object.assign(state.profile, patch); save(); },
   setSettings(patch){ Object.assign(state.settings, patch); save(); },
+  setSleep(kind, wake, bed){
+    const sl = state.settings.sleep || (state.settings.sleep = {});
+    sl[kind] = { wake, bed };
+    save();
+  },
   setWindow(kind, from, to){
     const w = state.settings.windows || (state.settings.windows = {});
     w[kind] = { from, to };

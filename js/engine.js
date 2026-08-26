@@ -416,17 +416,56 @@ export function activityPlan(date){
 /* ---------- каркас суток под каждый тип дня ---------- */
 export function dayShape(date){
   const kind = isWeekend(date) ? 'weekend' : (weekTypeFor(date) === 'morning' ? 'morning' : 'evening');
-  const S_ = {
-    // смена 7–16: встаёт рано, ест до работы, тренируется после
-    morning: { kind, wake:'06:00', sleep:'22:30', eatEnd:'19:45',
-      meals:[['breakfast','06:15'],['snack','10:00'],['lunch','13:00'],['dinner','19:00']] },
-    // смена 15–00: высыпается утром, тренируется до работы, ужинает на смене
-    evening: { kind, wake:'08:30', sleep:'00:30', eatEnd:'20:30',
-      meals:[['breakfast','09:00'],['lunch','12:30'],['snack','17:00'],['dinner','20:00']] },
-    weekend: { kind, wake:'08:30', sleep:'23:00', eatEnd:'19:45',
-      meals:[['breakfast','09:00'],['snack','12:00'],['lunch','14:00'],['dinner','19:00']] }
+  const DEF = {
+    morning: { wake:'06:00', bed:'22:30' },
+    evening: { wake:'08:30', bed:'00:30' },
+    weekend: { wake:'08:30', bed:'23:00' }
   }[kind];
-  return S_;
+  const cfg = ((S.settings.sleep || {})[kind]) || DEF;
+  const wake = cfg.wake || DEF.wake;
+  const bed  = cfg.bed  || DEF.bed;
+
+  const wakeM = toMin(wake);
+  let bedM = toMin(bed);
+  if (bedM <= wakeM) bedM += 1440;              // отбой после полуночи
+  const sleepMinutes = (wakeM + 1440) - bedM;   // сколько реально спит
+
+  // Всё пляшет от сна:
+  //  первый приём пищи — через 30 мин после подъёма
+  //  последний — за 2.5 часа до отбоя (чтобы не ложиться с полным желудком)
+  const first = wakeM + 30;
+  //  окно питания не длиннее 12 часов: и промежутки между едой человеческие,
+  //  и вечером остаётся чистый разрыв до сна
+  let last = Math.min(bedM - 150, first + 720);
+  if (last - first < 180) last = first + 180;   // страховка на очень короткий день
+
+  const A = activityPlan(date);
+  const tStart = A.trainTime ? toMin(A.trainTime) : null;
+  const tEnd   = tStart !== null ? tStart + A.trainMins : null;
+
+  const round5 = m => Math.round(m/5)*5;
+  const span = last - first;
+  const raw = [first, first + span/3, first + span*2/3, last];
+
+  // Приём пищи не должен попадать в тренировку — сдвигаем за неё
+  const times = raw.map(m => {
+    let v = m;
+    if (tStart !== null && v > tStart - 20 && v < tEnd + 10) v = tEnd + 15;
+    return round5(v);
+  });
+  // не даём слипнуться после сдвига
+  for (let i = 1; i < times.length; i++) if (times[i] <= times[i-1] + 30) times[i] = times[i-1] + 45;
+
+  const order = kind === 'evening'
+    ? ['breakfast','lunch','snack','dinner']    // на вечерней смене обед раньше, перекус на работе
+    : ['breakfast','snack','lunch','dinner'];
+
+  return {
+    kind, wake, sleep: toHHMM(bedM), bedM, wakeM, sleepMinutes,
+    hours: Math.round(sleepMinutes/60*10)/10,
+    eatEnd: toHHMM(times[3] + 30),
+    meals: order.map((key, i) => [key, toHHMM(times[i])])
+  };
 }
 
 /* Во сколько закрывается кухня в этот день */
@@ -496,8 +535,8 @@ export function buildDay(date){
   const slots = [];
   const push = (id, time, title, desc, kind, minutes) => slots.push({id,time,title,desc,kind,minutes:minutes||0});
 
-  const sleepM = toMin(shape.sleep) < 240 ? toMin(shape.sleep) + 1440 : toMin(shape.sleep);
-  const hours = Math.round(((toMin(shape.wake) + 1440 - sleepM) / 60) * 10) / 10;
+  const sleepM = shape.bedM;
+  const hours = shape.hours;
 
   /* ---------- подъём ---------- */
   push('wake', shape.wake, 'Подъём',
@@ -570,7 +609,8 @@ export function buildDay(date){
   push('predinner', toHHMM(toMin(mealAt.dinner) - 20), 'Стакан воды перед ужином',
     'Большой стакан за 20 минут до еды. Забирает часть объёма желудка — ужин уходит меньшей порцией без насилия над собой.', 'water', 2);
 
-  push('water2', '13:00', 'Вода: половина нормы',
+  const midDay = toHHMM(Math.round((toMin(mealAt.breakfast) + toMin(shape.eatEnd)) / 2 / 5) * 5);
+  push('water2', midDay, 'Вода: половина нормы',
     'К середине дня должно быть выпито ~' + Math.round(wtr/2/50)*50 + ' мл из ' + wtr + '.', 'water', 1);
 
   /* ---------- вечер ---------- */

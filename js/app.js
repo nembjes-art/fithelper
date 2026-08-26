@@ -5,6 +5,13 @@ import * as G from './gemini.js';
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
 const main = $('#main');
+function sleepHours(wake, bed){
+  if (!wake || !bed) return 0;
+  let w = E.toMin(wake), b = E.toMin(bed);
+  if (b <= w) b += 1440;
+  return Math.round(((w + 1440 - b) / 60) * 10) / 10;
+}
+
 const MODEL_FALLBACK = ['gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.1-pro-preview'];
 const TITLES = { today:'Сегодня', food:'Дневник еды', weight:'Вес', plan:'План', stats:'Итоги', settings:'Настройки' };
 let view = 'today';
@@ -617,6 +624,22 @@ function viewPlan(){
       '<div class="tiny dim mt">Недели чередуются автоматически. Если сбилось — переключи здесь, план пересоберётся.</div>' +
     '</div>' +
 
+    '<div class="card"><h2>Сон — от него считается весь день</h2>' +
+      '<div class="tiny muted mb">Поставь подъём и отбой. Приёмы пищи, окно питания, вода и добавки пересчитаются сами: завтрак через 30 мин после подъёма, ужин за 2,5 часа до сна, магний за час до отбоя.</div>' +
+      [['morning','Неделя 7–16'],['evening','Неделя 15–00'],['weekend','Выходные']].map(([k,t]) => {
+        const sl = (S.settings.sleep && S.settings.sleep[k]) || {wake:'',bed:''};
+        const sh = sleepHours(sl.wake, sl.bed);
+        return '<div class="row mb" style="gap:8px">' +
+          '<span class="small muted" style="flex:0 0 96px">'+esc(t)+'</span>' +
+          '<input type="time" data-sl="'+k+'" data-side="wake" value="'+esc(sl.wake)+'" class="grow">' +
+          '<span class="dim">—</span>' +
+          '<input type="time" data-sl="'+k+'" data-side="bed" value="'+esc(sl.bed)+'" class="grow">' +
+          '<span class="badge '+(sh>=7?'ok':(sh>=6?'warn':'bad'))+'" style="flex:0 0 auto">'+num(sh,1)+' ч</span>' +
+        '</div>';
+      }).join('') +
+      '<button class="btn primary block mt" id="p-sleep-save">Сохранить сон</button>' +
+    '</div>' +
+
     '<div class="card"><h2>Когда ты можешь заниматься</h2>' +
       '<div class="tiny muted mb">План строится строго внутри этих окон. Если окно короткое — приложение само урежет тренировку, а не предложит невозможное.</div>' +
       [['morning','Неделя 7–16'],['evening','Неделя 15–00'],['weekend','Выходные']].map(([k,t]) => {
@@ -661,6 +684,25 @@ function viewPlan(){
     toast('План пересобран'); render();
   };
   $('#p-voice').onclick = openVoice;
+  $('#p-sleep-save').onclick = () => {
+    let n = 0, warn = null;
+    for (const k of ['morning','evening','weekend']){
+      const w = $('[data-sl="'+k+'"][data-side="wake"]').value;
+      const b = $('[data-sl="'+k+'"][data-side="bed"]').value;
+      if (!w || !b) continue;
+      const h = sleepHours(w, b);
+      if (h < 4) { toast('Проверь время: получается всего ' + num(h,1) + ' ч сна'); return; }
+      if (h < 7 && !warn) warn = h;
+      S.setSleep(k, w, b); n++;
+    }
+    if (!n) return toast('Заполни хотя бы одну строку');
+    S.clearScheduleFrom(mondayOf(todayISO()));
+    render();
+    toast(warn
+      ? 'Сохранил, но ' + num(warn,1) + ' ч мало: на недосыпе ты завтра съешь больше'
+      : 'День пересобран под твой сон');
+  };
+
   $('#p-win-save').onclick = () => {
     let n = 0;
     for (const k of ['morning','evening','weekend']){
