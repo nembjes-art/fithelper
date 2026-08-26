@@ -5,6 +5,17 @@ import * as G from './gemini.js';
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
 const main = $('#main');
+function previewMeals(kind){
+  // ближайший день нужного типа — чтобы показать, что получится
+  const today = todayISO();
+  for (let i = 0; i < 14; i++){
+    const d = addDays(today, i);
+    const sh = E.dayShape(d);
+    if (sh.kind === kind) return sh.meals.map(([,t]) => t).join(' · ');
+  }
+  return '';
+}
+
 function sleepHours(wake, bed){
   if (!wake || !bed) return 0;
   let w = E.toMin(wake), b = E.toMin(bed);
@@ -640,6 +651,28 @@ function viewPlan(){
       '<button class="btn primary block mt" id="p-sleep-save">Сохранить сон</button>' +
     '</div>' +
 
+    '<div class="card"><h2>Окно питания</h2>' +
+      '<div class="tiny muted mb">Первый и последний приём пищи. Четыре приёма разложатся внутри равномерно, а кухня закроется через полчаса после последнего. Оставь пусто — приложение посчитает от сна само.</div>' +
+      [['morning','Неделя 7–16'],['evening','Неделя 15–00'],['weekend','Выходные']].map(([k,t]) => {
+        const ec = (S.settings.eat && S.settings.eat[k]) || {from:'',to:''};
+        const prev = previewMeals(k);
+        return '<div class="mb">' +
+          '<div class="row" style="gap:8px">' +
+            '<span class="small muted" style="flex:0 0 96px">'+esc(t)+'</span>' +
+            '<input type="time" data-eat="'+k+'" data-side="from" value="'+esc(ec.from||'')+'" class="grow">' +
+            '<span class="dim">—</span>' +
+            '<input type="time" data-eat="'+k+'" data-side="to" value="'+esc(ec.to||'')+'" class="grow">' +
+          '</div>' +
+          '<div class="tiny dim" style="padding-left:104px;margin-top:3px">' +
+            (ec.from && ec.to ? '' : 'авто · ') + esc(prev) + '</div>' +
+        '</div>';
+      }).join('') +
+      '<div class="btn-row mt">' +
+        '<button class="btn primary" id="p-eat-save">Сохранить окна еды</button>' +
+        '<button class="btn ghost" id="p-eat-auto">Считать от сна</button>' +
+      '</div>' +
+    '</div>' +
+
     '<div class="card"><h2>Когда ты можешь заниматься</h2>' +
       '<div class="tiny muted mb">План строится строго внутри этих окон. Если окно короткое — приложение само урежет тренировку, а не предложит невозможное.</div>' +
       [['morning','Неделя 7–16'],['evening','Неделя 15–00'],['weekend','Выходные']].map(([k,t]) => {
@@ -701,6 +734,29 @@ function viewPlan(){
     toast(warn
       ? 'Сохранил, но ' + num(warn,1) + ' ч мало: на недосыпе ты завтра съешь больше'
       : 'День пересобран под твой сон');
+  };
+
+  $('#p-eat-save').onclick = () => {
+    let n = 0;
+    for (const k of ['morning','evening','weekend']){
+      const f = $('[data-eat="'+k+'"][data-side="from"]').value;
+      const t = $('[data-eat="'+k+'"][data-side="to"]').value;
+      if (!f && !t){ S.setEat(k, '', ''); continue; }
+      if (!f || !t) { toast('Заполни обе половины окна или очисти обе'); return; }
+      let span = E.toMin(t) - E.toMin(f);
+      if (span <= 0) span += 1440;
+      if (span < 180) { toast('Окно еды меньше 3 часов — четыре приёма туда не влезут'); return; }
+      S.setEat(k, f, t); n++;
+    }
+    S.clearScheduleFrom(mondayOf(todayISO()));
+    render();
+    toast(n ? 'Приёмы пищи пересобраны' : 'Окна очищены — считаю от сна');
+  };
+
+  $('#p-eat-auto').onclick = () => {
+    for (const k of ['morning','evening','weekend']) S.setEat(k, '', '');
+    S.clearScheduleFrom(mondayOf(todayISO()));
+    render(); toast('Считаю окно питания от сна');
   };
 
   $('#p-win-save').onclick = () => {

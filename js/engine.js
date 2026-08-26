@@ -433,11 +433,26 @@ export function dayShape(date){
   // Всё пляшет от сна:
   //  первый приём пищи — через 30 мин после подъёма
   //  последний — за 2.5 часа до отбоя (чтобы не ложиться с полным желудком)
-  const first = wakeM + 30;
-  //  окно питания не длиннее 12 часов: и промежутки между едой человеческие,
-  //  и вечером остаётся чистый разрыв до сна
-  let last = Math.min(bedM - 150, first + 720);
-  if (last - first < 180) last = first + 180;   // страховка на очень короткий день
+  // Окно питания: если задано руками — берём его, иначе считаем от сна.
+  const eatCfg = ((S.settings.eat || {})[kind]) || {};
+  const okT = t => /^\d{1,2}:\d{2}$/.test(String(t||''));
+  const manualEat = okT(eatCfg.from) && okT(eatCfg.to);
+
+  let first, last;
+  if (manualEat){
+    first = toMin(eatCfg.from);
+    last  = toMin(eatCfg.to);
+    if (last <= first) last += 1440;            // ужин после полуночи
+    if (first < wakeM) first = wakeM + 30;      // не раньше подъёма
+    if (last > bedM - 60) last = bedM - 60;     // не впритык к отбою
+    if (last - first < 180) last = first + 180;
+  } else {
+    first = wakeM + 30;
+    //  окно питания не длиннее 12 часов: и промежутки между едой человеческие,
+    //  и вечером остаётся чистый разрыв до сна
+    last = Math.min(bedM - 150, first + 720);
+    if (last - first < 180) last = first + 180; // страховка на очень короткий день
+  }
 
   const A = activityPlan(date);
   const tStart = A.trainTime ? toMin(A.trainTime) : null;
@@ -461,7 +476,8 @@ export function dayShape(date){
     : ['breakfast','snack','lunch','dinner'];
 
   return {
-    kind, wake, sleep: toHHMM(bedM), bedM, wakeM, sleepMinutes,
+    kind, wake, sleep: toHHMM(bedM), bedM, wakeM, sleepMinutes, eatManual: manualEat,
+    eatFrom: toHHMM(times[0]), eatTo: toHHMM(times[3]),
     hours: Math.round(sleepMinutes/60*10)/10,
     eatEnd: toHHMM(times[3] + 30),
     meals: order.map((key, i) => [key, toHHMM(times[i])])
@@ -595,6 +611,13 @@ export function buildDay(date){
     }
     if (shape.kind === 'morning' && toMin(time) >= toMin('07:00') && toMin(time) < toMin('16:00')){
       text += ' Это на смене — бери с собой из дома.';
+    }
+    // еда почти впритык к тренировке
+    if (trainTime){
+      const gap = toMin(trainTime) - toMin(time);
+      if (gap > 0 && gap < 60){
+        text += ' До тренировки всего ' + gap + ' мин — ешь половину порции, вторую доешь после. С полным желудком приседать плохо.';
+      }
     }
     push('meal_'+key, time, M[key].title, text, 'meal', 0);
   });

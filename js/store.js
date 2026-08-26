@@ -36,6 +36,12 @@ const DEFAULTS = {
       morning: { wake: '06:00', bed: '22:30' },
       evening: { wake: '08:30', bed: '00:30' },
       weekend: { wake: '08:30', bed: '23:00' }
+    },
+    // Окно питания: первый и последний приём пищи. Пусто = считать от сна.
+    eat: {
+      morning: { from: '', to: '' },
+      evening: { from: '', to: '' },
+      weekend: { from: '', to: '' }
     }
   },
   // Массивы записей
@@ -147,6 +153,11 @@ export const S = {
 
   setProfile(patch){ Object.assign(state.profile, patch); save(); },
   setSettings(patch){ Object.assign(state.settings, patch); save(); },
+  setEat(kind, from, to){
+    const e = state.settings.eat || (state.settings.eat = {});
+    e[kind] = { from, to };
+    save();
+  },
   setSleep(kind, wake, bed){
     const sl = state.settings.sleep || (state.settings.sleep = {});
     sl[kind] = { wake, bed };
