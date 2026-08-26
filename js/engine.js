@@ -57,12 +57,9 @@ export function plannedActivityKcal(){
   const today = todayISO();
   let total = 0;
   for (let i = 0; i < 7; i++){
-    const d = addDays(today, i);
-    const slots = S.scheduleFor(d) || buildDay(d);
-    for (const s of slots){
-      if (s.kind === 'walk')  total += (s.minutes||0) * 6.1 * (w/100);   // быстрый шаг, сверх покоя: ~6.1 ккал/мин при 100 кг
-      if (s.kind === 'train') total += (s.minutes||0) * 7.0 * (w/100);   // силовая/интервалы, сверх покоя: ~7.0 ккал/мин
-    }
+    const a = activityPlan(addDays(today, i));
+    total += a.walkMin  * 6.1 * (w/100);   // быстрый шаг, сверх покоя
+    total += a.trainMins * 7.0 * (w/100);  // силовая/интервалы, сверх покоя
   }
   return Math.round(total / 7);
 }
@@ -385,6 +382,93 @@ export function windowFor(date){
   return { kind, from, to, minutes: Math.max(0, len) };
 }
 
+/* ---------- сколько движения запланировано на день ----------
+   Считается БЕЗ обращения к targets(), иначе получается круг:
+   targets → plannedActivityKcal → buildDay → menu → targets. */
+export function activityPlan(date){
+  const p = S.profile;
+  const budget = p.timeBudgetMin || 75;
+  const weekend = isWeekend(date);
+  const dow = new Date(date+'T12:00:00').getDay();
+  const win = windowFor(date);
+  const avail = Math.min(win.minutes, budget);
+  const isTrain = [1,2,4,5,6].includes(dow);
+
+  let block = null, want = 0, trainMins = 0, used = 0;
+  if (isTrain && avail >= 25){
+    if (dow === 1)      { block = STRENGTH_A; want = 60; }
+    else if (dow === 4) { block = STRENGTH_B; want = 60; }
+    else if (dow === 6) { block = STRENGTH_A; want = 60; }
+    else                { block = INTERVALS;  want = 40; }
+    const reserve = avail >= 55 ? 20 : 0;
+    trainMins = Math.max(25, Math.min(want, avail - reserve));
+    used = trainMins + 5;
+  }
+
+  let walkMin, walkTime;
+  if (weekend){ walkMin = Math.min(90, Math.max(45, budget)); walkTime = toHHMM(toMin(win.from) + used); }
+  else if (used > 0){ walkMin = Math.max(0, Math.min(avail - used, 30)); walkTime = toHHMM(toMin(win.from) + used); }
+  else { walkMin = Math.min(Math.max(25, avail), budget); walkTime = win.from; }
+
+  return { win, weekend, block, want, trainMins, trainTime: trainMins ? win.from : null, walkMin, walkTime, avail };
+}
+
+/* ---------- каркас суток под каждый тип дня ---------- */
+export function dayShape(date){
+  const kind = isWeekend(date) ? 'weekend' : (weekTypeFor(date) === 'morning' ? 'morning' : 'evening');
+  const S_ = {
+    // смена 7–16: встаёт рано, ест до работы, тренируется после
+    morning: { kind, wake:'06:00', sleep:'22:30', eatEnd:'19:45',
+      meals:[['breakfast','06:15'],['snack','10:00'],['lunch','13:00'],['dinner','19:00']] },
+    // смена 15–00: высыпается утром, тренируется до работы, ужинает на смене
+    evening: { kind, wake:'08:30', sleep:'00:30', eatEnd:'20:30',
+      meals:[['breakfast','09:00'],['lunch','12:30'],['snack','17:00'],['dinner','20:00']] },
+    weekend: { kind, wake:'08:30', sleep:'23:00', eatEnd:'19:45',
+      meals:[['breakfast','09:00'],['snack','12:00'],['lunch','14:00'],['dinner','19:00']] }
+  }[kind];
+  return S_;
+}
+
+/* Во сколько закрывается кухня в этот день */
+export function eatEndFor(date){
+  const manual = S.settings.eatWindowEnd;
+  const shape = dayShape(date);
+  // если человек сам менял окно в настройках — уважаем его выбор
+  return (manual && manual !== '20:00') ? manual : shape.eatEnd;
+}
+
+/* ---------- меню: разложено под 1840 ккал и 177 г белка при 104 кг ---------- */
+/* Порции считаются от текущих целей, поэтому меню едет вместе с весом. */
+function menu(){
+  const tg = targets();
+  const k = tg.kcal / 1840;          // масштаб под текущий лимит
+  const g = n => Math.round(n * k / 5) * 5;
+  return {
+    breakfast: {
+      title: 'Завтрак',
+      text: 'Скир или творог 0–5% ' + g(250) + ' г · овсянка ' + g(50) + ' г сухой · ягоды ' + g(100) + ' г. ' +
+            '≈ ' + Math.round(375*k) + ' ккал, ' + Math.round(33*k) + ' г белка.'
+    },
+    snack: {
+      title: 'Перекус — протеин',
+      text: 'Мерная ложка протеина на воде + яблоко или груша. ' +
+            '≈ ' + Math.round(200*k) + ' ккал, ' + Math.round(31*k) + ' г белка. ' +
+            'Это самый дешёвый способ добрать белок, не съев лишнего.'
+    },
+    lunch: {
+      title: 'Обед',
+      text: 'Куриная грудка или индейка ' + g(200) + ' г · рис/гречка ' + g(60) + ' г сухой · овощи ' + g(200) + ' г · чайная ложка масла. ' +
+            '≈ ' + Math.round(645*k) + ' ккал, ' + Math.round(65*k) + ' г белка.'
+    },
+    dinner: {
+      title: 'Ужин',
+      text: 'Рыба, индейка или творог ' + g(200) + ' г · овощи ' + g(300) + ' г · гречка ' + g(40) + ' г сухой. ' +
+            '≈ ' + Math.round(530*k) + ' ккал, ' + Math.round(48*k) + ' г белка. ' +
+            'Последняя еда за день — делай её белковой, тогда ночью не потянет к холодильнику.'
+    }
+  };
+}
+
 /* ---------- генератор плана дня ---------- */
 const STRENGTH_A = {
   title: 'Силовая A — низ + спина',
@@ -401,95 +485,106 @@ const INTERVALS = {
 
 export function buildDay(date){
   const p = S.profile;
-  const st = S.settings;
   const wt = weekTypeFor(date);
   const weekend = isWeekend(date);
   const budget = p.timeBudgetMin || 75;
   const dow = new Date(date+'T12:00:00').getDay(); // 0 вс
+  const shape = dayShape(date);
+  const M = menu();
   const wtr = waterTarget();
+  const bodyW = currentTrendWeight();
   const slots = [];
+  const push = (id, time, title, desc, kind, minutes) => slots.push({id,time,title,desc,kind,minutes:minutes||0});
 
-  const push = (id, time, title, desc, kind, minutes) => slots.push({id,time,title,desc,kind,minutes});
+  const sleepM = toMin(shape.sleep) < 240 ? toMin(shape.sleep) + 1440 : toMin(shape.sleep);
+  const hours = Math.round(((toMin(shape.wake) + 1440 - sleepM) / 60) * 10) / 10;
 
-  // — утро —
-  const wake = weekend ? '09:00' : (wt === 'morning' ? '06:10' : '09:00');
-  push('weigh', wake, 'Взвешивание', 'Натощак, после туалета, без одежды. Одна цифра в приложение — и забыл.', 'weigh', 2);
-  push('water1', wake, 'Стакан воды 500 мл', 'До кофе и до еды. Это запускает обмен и гасит ложный голод.', 'water', 2);
+  /* ---------- подъём ---------- */
+  push('wake', shape.wake, 'Подъём',
+    'Сразу свет и движение, телефон в руки не берём. Встаёшь в одно и то же время — в этом весь смысл, организм перестаёт торговаться.', 'sleep');
+  push('weigh', shape.wake, 'Взвешивание',
+    'Натощак, после туалета, без одежды. Одна цифра в приложение — и забыл. Смотрим не на неё, а на тренд.', 'weigh', 2);
+  push('water1', shape.wake, 'Вода 500 мл',
+    'До кофе и до еды. Запускает обмен и гасит ложный голод, который на самом деле жажда.', 'water', 2);
 
-  // — тренировочный блок и ходьба: строго внутри окна, которое человек задал —
-  const win = windowFor(date);
-  const trainDays = [1,2,4,5,6]; // пн вт чт пт сб — 3 силовых + 2 кардио
-  const isTrain = trainDays.includes(dow);
-  const avail = Math.min(win.minutes, budget);   // сколько реально есть времени
+  /* ---------- окно тренировки ---------- */
+  const A = activityPlan(date);
+  const win = A.win;
+  const trainTime = A.trainTime, trainMins = A.trainMins;
 
-  let used = 0;
-  if (isTrain && avail >= 25){
-    let block, want;
-    if (dow === 1)      { block = STRENGTH_A; want = 60; }
-    else if (dow === 4) { block = STRENGTH_B; want = 60; }
-    else if (dow === 6) { block = STRENGTH_A; want = 60; }
-    else                { block = INTERVALS;  want = 40; }
-
-    // оставляем минимум 15 минут на ходьбу, если окно позволяет
-    const reserve = avail >= 55 ? 20 : 0;
-    const mins = Math.max(25, Math.min(want, avail - reserve));
-
+  if (trainMins){
+    const block = A.block, want = A.want;
     let desc = block.desc;
-    if (mins < want){
-      desc += ' Окно у тебя ' + win.minutes + ' мин, поэтому сокращаем до ' + mins + ': ' +
-              'убери по одному подходу в каждом упражнении и режь отдых до 45 сек. ' +
-              'Короткая тренировка целиком лучше длинной, которую ты пропустишь.';
-    } else {
-      desc += ' Всего ~' + mins + ' мин.';
+    desc += trainMins < want
+      ? ' Окно у тебя ' + win.minutes + ' мин, поэтому сокращаем до ' + trainMins + ': убери по одному подходу в каждом упражнении и режь отдых до 45 сек. Короткая тренировка целиком лучше длинной, которую ты пропустишь.'
+      : ' Всего ~' + trainMins + ' мин.';
+    push('train', trainTime, block.title, desc, 'train', trainMins);
+  }
+
+  /* ---------- кофеин: только если до сна больше 7 часов ---------- */
+  if (trainTime){
+    const pre = toMin(trainTime) - 40;
+    let gap = sleepM - toMin(trainTime);
+    if (gap < 0) gap += 1440;
+    if (gap >= 420 && pre > toMin(shape.wake)){
+      push('caffeine', toHHMM(pre), 'Кофеин 200 мг',
+        'Одна таблетка FITS за 40 минут до тренировки. До сна ещё ' + Math.round(gap/60) + ' ч — не помешает.', 'supp', 1);
+    } else if (gap < 420){
+      push('nocaffeine', toHHMM(Math.max(toMin(shape.wake)+30, pre)), 'Кофеин сегодня не пей',
+        'Тренировка слишком близко к отбою: 200 мг в это время съедят половину глубокого сна, а недосып завтра заставит тебя переесть. Оставь кофеин на выходные и вечерние недели.', 'rule');
     }
-    push('train', win.from, block.title, desc, 'train', mins);
-    used = mins + 5;
   }
 
-  // — ходьба — в остатке окна, а в свободные дни и выходные шире —
-  let walkMin, walkTime;
-  if (weekend){
-    walkMin = Math.min(90, Math.max(45, budget));
-    walkTime = toHHMM(toMin(win.from) + used);
-  } else if (used > 0){
-    walkMin = Math.max(0, Math.min(avail - used, 30));
-    walkTime = toHHMM(toMin(win.from) + used);
-  } else {
-    walkMin = Math.min(Math.max(25, avail), budget);
-    walkTime = win.from;
-  }
-
+  /* ---------- ходьба ---------- */
+  const walkMin = A.walkMin, walkTime = A.walkTime;
   if (walkMin >= 10){
-    push('walk', walkTime,
-      'Ходьба ' + walkMin + ' мин',
+    push('walk', walkTime, 'Ходьба ' + walkMin + ' мин',
       weekend
         ? 'Выходные — твоя главная дыра: в будни 4–5 тысяч шагов, в выходные почти ноль. Длинная спокойная ходьба закрывает её и не мешает восстановлению.'
-        : 'Быстрым шагом, не прогулочным. Это ~' + Math.round(walkMin*5.5) + ' ккал и лучший способ гасить перебор по еде.',
+        : 'Быстрым шагом, не прогулочным. Это ~' + Math.round(walkMin*6.1*(bodyW/100)) + ' ккал и лучший способ гасить перебор по еде.',
       'walk', walkMin);
-  } else if (!isTrain || avail < 25){
-    push('walk', win.from,
-      'Ходьба — сколько влезет',
-      'Окно всего ' + win.minutes + ' мин. Иди быстрым шагом всё это время: даже 20 минут это ~110 ккал и держит привычку живой.',
-      'walk', Math.max(10, avail));
   }
 
-  // — вода в течение дня —
-  push('water2', '13:00', 'Вода: половина нормы', 'К середине дня должно быть выпито ~' + Math.round(wtr/2/50)*50 + ' мл.', 'water', 1);
+  /* ---------- еда и добавки ---------- */
+  const mealAt = {};
+  shape.meals.forEach(([key, time]) => {
+    mealAt[key] = time;
+    let text = M[key].text;
+    // на вечерней смене часть приёмов пищи выпадает на работу
+    if (shape.kind === 'evening' && toMin(time) >= toMin('15:00')){
+      text += ' Это уже на смене — собери контейнер с утра. Работа без еды с собой всегда заканчивается автоматом или заправкой.';
+    }
+    if (shape.kind === 'morning' && toMin(time) >= toMin('07:00') && toMin(time) < toMin('16:00')){
+      text += ' Это на смене — бери с собой из дома.';
+    }
+    push('meal_'+key, time, M[key].title, text, 'meal', 0);
+  });
 
-  // — окно питания —
-  push('eatstop', st.eatWindowEnd, 'Кухня закрыта', 'После ' + st.eatWindowEnd + ' еды нет. Голод вечером — это привычка, а не потребность; она ломается за 5–7 дней.', 'rule', 0);
+  push('supp_am', toHHMM(toMin(mealAt.breakfast) + 5), 'Креатин + D3',
+    'Креатин 5 г (одна чайная ложка без горки) размешать в воде · витамин D3 2000 МЕ одна капсула. ' +
+    'Креатин пьётся КАЖДЫЙ день, включая дни отдыха — он работает от накопления, а не от разового приёма.', 'supp', 2);
 
-  // — добавки —
-  push('supp', weekend ? '09:30' : (wt === 'morning' ? '06:30' : '09:30'),
-    'Добавки',
-    'Креатин моногидрат 5 г (каждый день, включая дни отдыха) · витамин D3 2000 МЕ · омега-3 1–2 г · магний 300 мг вечером. Всё запивать водой.',
-    'supp', 1);
+  push('supp_omega', toHHMM(toMin(mealAt.lunch) + 5), 'Омега-3',
+    'Одна капсула OstroVit Omega 3 Extreme с едой — на голодный желудок будет отрыжка рыбой.', 'supp', 1);
 
-  // — вечер —
-  const sleepTime = (!weekend && wt === 'evening') ? '01:00' : '22:45';
-  push('sleep', sleepTime, 'Отбой', 'Недосып поднимает грелин и роняет лептин — на следующий день ты съешь больше, даже не заметив. 7–8 часов не обсуждается.', 'sleep', 0);
+  push('predinner', toHHMM(toMin(mealAt.dinner) - 20), 'Стакан воды перед ужином',
+    'Большой стакан за 20 минут до еды. Забирает часть объёма желудка — ужин уходит меньшей порцией без насилия над собой.', 'water', 2);
 
-  // сортируем по времени; ночные часы (00:00-04:00) считаем концом дня
+  push('water2', '13:00', 'Вода: половина нормы',
+    'К середине дня должно быть выпито ~' + Math.round(wtr/2/50)*50 + ' мл из ' + wtr + '.', 'water', 1);
+
+  /* ---------- вечер ---------- */
+  push('eatstop', shape.eatEnd, 'Кухня закрыта',
+    'После ' + shape.eatEnd + ' еды нет. Голод вечером — это привычка, а не потребность; она ломается за 5–7 дней. Вода, чай без сахара.', 'rule');
+
+  push('supp_mg', toHHMM(sleepM - 60), 'Магний 300 мг',
+    'Одна таблетка OstroVit MgZB за час до отбоя. На дефиците и большом объёме ходьбы иначе ловишь судороги в икрах, плюс магний заметно улучшает глубокий сон.', 'supp', 1);
+
+  push('sleep', shape.sleep, 'Отбой',
+    'Спать ' + hours + ' ч. Недосып поднимает грелин и роняет лептин — на следующий день ты съешь больше и даже не заметишь. ' +
+    'Это не «полезная привычка», а половина твоего результата.', 'sleep');
+
+  // сортировка: ночные часы (00:00–04:00) считаем концом суток
   const key = t => { const [h,m] = t.split(':').map(Number); return (h < 4 ? h + 24 : h)*60 + m; };
   slots.sort((a,b) => key(a.time) - key(b.time));
   return slots;
