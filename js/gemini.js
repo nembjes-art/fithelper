@@ -374,3 +374,83 @@ export async function testKey(){
   const r = await call([{ text: 'Ответь JSON: {"ok":true}' }], { type:'object', properties:{ok:{type:'boolean'}}, required:['ok'] });
   return !!r.ok;
 }
+
+/* ---------- листовка магазина ---------- */
+const FLYER_SCHEMA = {
+  type: 'object',
+  properties: {
+    ok: { type: 'boolean' },
+    store: { type: 'string', description: 'maxima | lidl | rimi | selver | other' },
+    until: { type: 'string', description: 'последний день акции, yyyy-mm-dd, или пустая строка' },
+    note: { type: 'string' },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          product: { type: 'string' },
+          price: { type: 'number' },
+          pack: { type: 'string' },
+          per: { type: 'number' },
+          base: { type: 'string' },
+          old: { type: 'number' }
+        },
+        required: ['key','product','price','per','base']
+      }
+    }
+  },
+  required: ['ok','items']
+};
+
+const FLYER_KEYS = ['курица_грудка','курица_окорочка','фарш_куриный','фарш_индейки','индейка',
+  'свинина','говядина','лосось','треска','сельдь','творог','йогурт','сыр','масло_сливочное',
+  'яйца','белки_яичные','овсянка','рис','гречка','булгур','киноа','картофель','ягоды',
+  'овощная_смесь','брокколи','морковь_лук','перец_шпинат','кабачок_перец','огурцы_помидоры',
+  'томаты_консерв','фасоль','масло_оливковое','орехи','фрукты'];
+
+const FLYER_PROMPT = `Ты читаешь рекламную листовку продуктового магазина в Эстонии (текст на эстонском или русском).
+Твоя работа — вытащить продукты и цены, которые полезны худеющему человеку.
+
+Правила:
+- Бери ТОЛЬКО базовые продукты: мясо, рыбу, молочку, яйца, крупы, овощи, фрукты, масло, консервы.
+- Игнорируй сладости, чипсы, алкоголь, газировку, бытовую химию, готовые блюда, товары не для еды.
+- price — цена по акции, которая написана крупно. old — зачёркнутая старая цена, если её видно.
+- Если акционная и старая цена перепутаны — акционная всегда МЕНЬШЕ старой. Не наоборот.
+- pack — что написано на ценнике: «кг», «500 г», «10 шт», «1 л».
+- per — цена за килограмм (или за штуку, если товар штучный). Посчитай сам: 500 г за 1.99 € → per = 3.98.
+- base — «кг» для весовых, «шт» для штучных (яйца).
+- key — категория строго из этого списка: ${FLYER_KEYS.join(', ')}.
+  Если продукт не подходит ни под одну категорию — не включай его вообще.
+- until — до какой даты действует акция, в формате yyyy-mm-dd. Если на листовке только «kuni 31.08» — возьми ближайший такой день.
+- Цену не выдумывай. Не видишь цифру — пропусти товар.
+- store: maxima, lidl, rimi, selver или other — по логотипу.
+
+Если на фото не листовка магазина — верни ok:false и объясни в note по-русски, коротко.`;
+
+export async function readFlyer(base64, mime, storeHint){
+  const parts = [
+    { text: storeHint ? ('Пользователь говорит, что это листовка: ' + storeHint) : 'Разбери листовку.' },
+    { inline_data: { mime_type: mime || 'image/jpeg', data: base64 } }
+  ];
+  const r = await call(parts, FLYER_SCHEMA, FLYER_PROMPT);
+  const items = (r.items || []).map(function(it){
+    let price = Number(it.price) || 0;
+    let old = Number(it.old) || 0;
+    // страховка от перепутанных цен: акционная всегда меньше старой
+    if (old && old < price){ const t = price; price = old; old = t; }
+    return {
+      key: String(it.key || '').trim(),
+      product: String(it.product || '').trim(),
+      price: Math.round(price * 100) / 100,
+      pack: String(it.pack || '').trim(),
+      per: Math.round((Number(it.per) || 0) * 100) / 100,
+      base: it.base === 'шт' ? 'шт' : 'кг',
+      old: old ? Math.round(old * 100) / 100 : null
+    };
+  }).filter(function(it){
+    return it.key && FLYER_KEYS.indexOf(it.key) >= 0 && it.price > 0 && it.per > 0 && it.per < 200;
+  });
+  const until = /^\d{4}-\d{2}-\d{2}$/.test(String(r.until || '')) ? r.until : null;
+  return { ok: r.ok !== false && items.length > 0, store: r.store || '', until: until, note: r.note || '', items: items };
+}

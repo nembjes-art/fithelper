@@ -5,8 +5,15 @@ globalThis.localStorage = {
   setItem: (k,v) => { mem[k] = String(v); },
   removeItem: k => { delete mem[k]; }
 };
+// мок fetch для prices.json
+import { readFileSync } from 'node:fs';
+globalThis.fetch = async (u) => {
+  const path = String(u).replace(/^\.\//, './');
+  return { ok: true, json: async () => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf-8')) };
+};
 const { S, todayISO, addDays } = await import('./js/store.js');
 const E = await import('./js/engine.js');
+const P = await import('./js/prices.js');
 
 let fails = 0;
 const eq = (name, got, want, tol=0) => {
@@ -86,6 +93,49 @@ eq('недели чередуются', wt1 !== wt2, true);
 S.setProfile({ goalWeight: 60 });
 const tg2 = E.targets();
 eq('лимит всё ещё >= BMR', tg2.kcal >= tg2.bmr, true);
+
+/* ---------- цены ---------- */
+console.log('\n--- цены ---');
+await P.loadPrices();
+eq('база цен загрузилась', P.allItems().length > 40, true);
+eq('матч: Куриная грудка', P.keyFor('Куриная грудка'), 'курица_грудка');
+eq('матч: Скир или творог 0–5%', P.keyFor('Скир или творог 0–5%'), 'творог');
+eq('матч: Овсяные хлопья', P.keyFor('Овсяные хлопья'), 'овсянка');
+eq('матч: Яйца', P.keyFor('Яйца'), 'яйца');
+eq('матч: неизвестное', P.keyFor('Пыль звёздная'), null);
+
+const bestChick = P.bestFor('курица_грудка');
+eq('грудка: найден вариант', !!bestChick, true);
+eq('грудка: цена за кг', bestChick.per, 5.99);
+
+const ings = new Set();
+E.allRecipes().forEach(r => r.ing.forEach(a => ings.add(a[0])));
+const unmatched = [...ings].filter(n => !P.keyFor(n));
+eq('все ингредиенты рецептов имеют категорию', unmatched.length, 0);
+if (unmatched.length) console.log('      без категории:', unmatched.join(', '));
+
+S.setMealPlan({ enabled: true, assign: E.autoPlanWeek(0) });
+const list = E.shoppingList();
+eq('список покупок непустой', list.length > 0, true);
+const b = P.basket(list);
+console.log('      позиций в корзине:', b.rows.length, '| без цены:', b.missing);
+eq('корзина посчиталась', b.total > 0, true);
+eq('корзина в разумных пределах (10–120 €)', b.total > 10 && b.total < 120, true);
+eq('магазины распределились', b.stores.length >= 1, true);
+b.stores.forEach(st => console.log('      ' + st.name + ': ' + st.sum + ' € (' + st.items.length + ' поз.)'));
+console.log('      итого:', b.total, '€ | экономия:', b.save, '€');
+
+const swaps = P.swapHints(list);
+console.log('      замен предложено:', swaps.length);
+const deals = P.topDeals(5);
+eq('скидки найдены', deals.length > 0, true);
+
+S.addFlyer({ store: 'lidl', until: null, items: [
+  { key: 'курица_грудка', product: 'Hähnchenbrustfilet', price: 4.49, pack: 'кг', per: 4.49, base: 'кг', old: 6.99 }
+]});
+const afterFlyer = P.bestFor('курица_грудка');
+eq('листовка Lidl перебила базу', afterFlyer.per, 4.49);
+eq('листовка помечена', afterFlyer.fromFlyer, true);
 
 console.log(fails ? ('\n*** ПРОВАЛЕНО ТЕСТОВ: ' + fails) : '\n*** ВСЕ ТЕСТЫ ПРОШЛИ');
 process.exit(fails ? 1 : 0);

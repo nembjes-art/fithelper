@@ -56,6 +56,8 @@ const DEFAULTS = {
   schedule: {}, // {date: [{id,time,title,desc,kind,minutes}]}
   notes: [],    // {date, text}
   customRecipes: [],   // блюда, собранные AI под предпочтения
+  // Цены из сфотографированных листовок: {store, date, until, items:[{key,product,price,pack,per,base,old}]}
+  flyers: [],
   // Рацион: какое блюдо стоит в каком приёме пищи по дням недели (1=пн … 7=вс)
   mealPlan: {
     enabled: false,
@@ -255,6 +257,20 @@ export const S = {
   mealFor(dow, slot){
     const d = (state.mealPlan.assign || {})[String(dow)];
     return d ? d[slot] : null;
+  },
+
+  /* цены из листовок */
+  get flyers(){ return state.flyers || (state.flyers = []); },
+  addFlyer(f){
+    const list = state.flyers || (state.flyers = []);
+    list.unshift({ id: 'f' + Date.now(), added: todayISO(), ...f });
+    // держим только последние 8 листовок, чтобы не раздувать хранилище
+    state.flyers = list.slice(0, 8);
+    save();
+  },
+  removeFlyer(id){
+    state.flyers = (state.flyers || []).filter(function(f){ return f.id !== id; });
+    save();
   },
 
   /* лог движка */

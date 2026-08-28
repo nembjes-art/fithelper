@@ -2,6 +2,7 @@
 import { S, todayISO, addDays, daysBetween, fmtDate, dowRu, isWeekend, mondayOf } from './store.js';
 import * as E from './engine.js';
 import * as G from './gemini.js';
+import * as P from './prices.js';
 
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
@@ -617,9 +618,7 @@ function viewRation(){
 
     '<div class="card"><div class="row between mb"><h2 style="margin:0">Список покупок</h2>' +
       '<button class="btn sm ghost" id="r-copy">Скопировать</button></div>' +
-      '<ul class="list" style="margin:0 -14px -14px">' +
-        shop.map(i => '<li><span class="grow small">'+esc(i.name)+'</span><b class="small">'+num(i.qty, i.unit==='кг'?1:0)+' '+esc(i.unit)+'</b></li>').join('') +
-      '</ul>' +
+      '<div id="r-shop"><div class="tiny dim center">Считаю цены…</div></div>' +
     '</div>' +
 
     '<div class="card"><h2>Неделя по дням</h2>' +
@@ -702,7 +701,15 @@ function viewRation(){
     render();
   };
   $('#r-copy').onclick = async () => {
-    const text = E.shoppingList().map(i => i.name + ' — ' + (i.unit==='кг'?num(i.qty,1):num(i.qty)) + ' ' + i.unit).join('\n');
+    await P.loadPrices();
+    const list = E.shoppingList();
+    const b = P.basket(list);
+    const line = r => r.name + ' — ' + (r.unit==='кг'?num(r.qty,1):num(r.qty)) + ' ' + r.unit +
+      (r.found ? '  (' + r.best.product + ', ' + MONEY(r.cost) + ')' : '');
+    const text = b.stores.map(st => st.name.toUpperCase() + ' — ' + MONEY(st.sum) + '\n' +
+        st.items.map(line).join('\n')).join('\n\n') +
+      (b.missing ? '\n\nБЕЗ ЦЕНЫ\n' + b.rows.filter(r=>!r.found).map(line).join('\n') : '') +
+      '\n\nИТОГО ' + MONEY(b.total);
     try { await navigator.clipboard.writeText(text); toast('Список в буфере'); }
     catch(_){ sheet('Список покупок', '<textarea readonly style="min-height:280px">'+esc(text)+'</textarea>'); }
   };
@@ -710,6 +717,23 @@ function viewRation(){
     const [dow, slot] = el.dataset.pick.split('|');
     pickDish(Number(dow), slot);
   });
+
+  renderShopping(shop);
+}
+
+/* ---------- список покупок с ценами ---------- */
+const MONEY = v => (Math.round(v*100)/100).toFixed(2).replace('.', ',') + ' €';
+const DMY = iso => { const p = String(iso||'').split('-'); return p.length===3 ? (p[2]+'.'+p[1]) : ''; };
+
+function priceLine(it){
+  const disc = it.old && it.old > it.price;
+  return '<span class="tiny dim">' + esc(it.product) +
+    (it.pack ? ' · ' + esc(it.pack) : '') +
+    ' · ' + MONEY(it.per) + '/' + esc(it.base) +
+    (disc ? ' <span style="color:var(--ok)">−' + Math.round((1 - it.price/it.old)*100) + '%</span>' : '') +
+    (it.until ? ' <span style="color:var(--warn)">до ' + DMY(it.until) + '</span>' : '') +
+    (it.fromFlyer ? ' <span class="dim">(с листовки)</span>' : '') +
+    '</span>';
 }
 
 function pickDish(dow, slot){
@@ -1409,3 +1433,139 @@ window.addEventListener('hashchange', () => { if (ingestHash()) render(); });
 
 ingestHash();
 go('today');
+
+async function renderShopping(shop){
+  const box = $('#r-shop');
+  if (!box) return;
+  await P.loadPrices();
+  const b = P.basket(shop);
+  const swaps = P.swapHints(shop);
+  const soon = P.endingSoon(5);
+  const upd = (P.db() || {}).updated;
+
+  const row = r =>
+    '<li style="align-items:flex-start">' +
+      '<div class="grow">' +
+        '<div class="small">' + esc(r.name) + ' — <b>' + num(r.qty, r.unit==='кг'?1:0) + ' ' + esc(r.unit) + '</b></div>' +
+        (r.found ? '<div>' + priceLine(r.best) + '</div>'
+                 : '<div class="tiny dim">цену пока не нашёл — глянь на месте</div>') +
+      '</div>' +
+      (r.cost != null ? '<b class="small" style="white-space:nowrap">' + MONEY(r.cost) + '</b>' : '') +
+    '</li>';
+
+  const missing = b.rows.filter(r => !r.found);
+
+  box.innerHTML =
+    '<div class="row between mb">' +
+      '<div><div class="tiny dim">Еда на неделю</div><div style="font-size:24px;font-weight:700">' + MONEY(b.total) + '</div></div>' +
+      (b.save > 0.5 ? '<div style="text-align:right"><div class="tiny dim">сэкономил на выборе</div>' +
+        '<div style="font-size:18px;font-weight:700;color:var(--ok)">' + MONEY(b.save) + '</div></div>' : '') +
+    '</div>' +
+
+    (soon.length ?
+      '<div class="verdict warn" style="margin-bottom:10px"><div class="t">Успей: акции кончаются</div><div class="d">' +
+        soon.slice(0,4).map(d => esc(d.product) + ' — ' + MONEY(d.price) + ', ' + esc(P.storeName(d.store)) + ', до ' + DMY(d.until)).join('<br>') +
+      '</div></div>' : '') +
+
+    b.stores.map(st =>
+      '<div class="mt"><div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)">' +
+        '<b>' + esc(st.name) + '</b><b>' + MONEY(st.sum) + '</b></div>' +
+      '<ul class="list" style="margin:0">' + st.items.map(row).join('') + '</ul></div>').join('') +
+
+    (missing.length ? '<div class="mt"><div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)">' +
+      '<b class="dim">Без цены</b></div><ul class="list" style="margin:0">' + missing.map(row).join('') + '</ul></div>' : '') +
+
+    (swaps.length ?
+      '<div class="verdict ok mt"><div class="t">Замени — станет дешевле</div><div class="d">' +
+        swaps.slice(0,3).map(s => esc(s.name) + ' → ' + esc(s.to.product) + ' (' + esc(P.storeName(s.to.store)) + '), минус ' + MONEY(s.save) +
+          (s.why ? '. ' + esc(s.why) : '')).join('<br>') +
+      '</div></div>' : '') +
+
+    '<button class="btn block mt" id="r-flyer">Сфотографировать листовку</button>' +
+    '<div class="tiny dim center mt">Maxima и Rimi обновляются сами' + (upd ? ' (последний раз ' + DMY(upd) + ')' : '') +
+      '. Lidl автоматически не читается — сними страницу листовки, ИИ впишет цены сам.' +
+      (S.flyers.length ? ' Твоих листовок в базе: ' + S.flyers.length + '.' : '') +
+    '</div>' +
+    (S.flyers.length ? '<div class="chips mt">' + S.flyers.map(f =>
+      '<button class="chip" data-flyer="' + esc(f.id) + '">' + esc(P.storeName(f.store)) + ' ' + DMY(f.added) + ' ✕</button>').join('') + '</div>' : '');
+
+  $('#r-flyer').onclick = openFlyer;
+  $$('[data-flyer]', box).forEach(el => el.onclick = () => {
+    S.removeFlyer(el.dataset.flyer);
+    renderShopping(shop);
+    toast('Листовка убрана');
+  });
+}
+
+function openFlyer(){
+  const { el, close } = sheet('Листовка магазина',
+    '<input type="file" accept="image/*" capture="environment" id="fl-file" style="display:none">' +
+    '<div id="fl-stage">' +
+      '<button class="btn primary block" id="fl-pick">Сделать фото / выбрать</button>' +
+      '<div class="tiny dim center mt">Снимай страницу целиком, ровно, при свете. Цены должны читаться. ИИ возьмёт только те продукты, которые есть в твоих рецептах.</div>' +
+    '</div>');
+
+  const stage = $('#fl-stage', el);
+  const file = $('#fl-file', el);
+  $('#fl-pick', el).onclick = () => file.click();
+
+  file.onchange = async () => {
+    const f = file.files[0]; if (!f) return;
+    let img;
+    try { img = await G.fileToBase64(f); }
+    catch(e){ return toast(e.message); }
+
+    stage.innerHTML =
+      '<img class="thumb" src="' + img.dataUrl + '">' +
+      '<label class="f"><span>Какой магазин</span><select id="fl-store">' +
+        '<option value="lidl">Lidl</option><option value="maxima">Maxima</option>' +
+        '<option value="rimi">Rimi</option><option value="other">другой</option>' +
+      '</select></label>' +
+      '<button class="btn primary block" id="fl-run"><span class="spin"></span> Читаю…</button>';
+
+    const run = async () => {
+      const btn = $('#fl-run', el);
+      const store = $('#fl-store', el).value;
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Читаю цены…';
+      try{
+        const r = await G.readFlyer(img.base64, img.mime, store);
+        if (!r.ok || !r.items.length){
+          btn.disabled = false; btn.textContent = 'Попробовать снова';
+          return toast(r.note || 'Цены на фото разобрать не вышло');
+        }
+        showFlyerConfirm(r, store, close);
+      }catch(e){
+        btn.disabled = false; btn.textContent = 'Повторить';
+        toast(e.message);
+      }
+    };
+    $('#fl-run', el).onclick = run;
+    run();
+  };
+}
+
+function showFlyerConfirm(r, storeFallback, closePrev){
+  const store = (r.store && r.store !== 'other') ? r.store : storeFallback;
+  const rows = r.items.map((it, i) =>
+    '<label class="row" style="padding:8px 0;border-bottom:1px solid var(--line);gap:10px">' +
+      '<input type="checkbox" checked data-fi="' + i + '">' +
+      '<span class="grow"><span class="small">' + esc(it.product) + '</span>' +
+      '<div class="tiny dim">' + esc(it.key.replace(/_/g, ' ')) + ' · ' + MONEY(it.price) + (it.pack ? ' / ' + esc(it.pack) : '') +
+      ' · ' + MONEY(it.per) + '/' + esc(it.base) + (it.old ? ' <span style="color:var(--ok)">было ' + MONEY(it.old) + '</span>' : '') + '</div></span>' +
+    '</label>').join('');
+
+  sheet('Нашёл ' + r.items.length + ' ' + plural(r.items.length, 'цену', 'цены', 'цен'),
+    '<div class="tiny muted mb">Сверь с листовкой и сними галочки там, где ИИ ошибся. Отмеченные лягут в базу и будут перебивать автоматические цены, пока акция не кончится' + (r.until ? ' (до ' + DMY(r.until) + ')' : '') + '.</div>' +
+    rows +
+    '<button class="btn primary block mt" id="fl-save">Сохранить</button>',
+    (m, close) => {
+      $('#fl-save', m).onclick = () => {
+        const keep = r.items.filter((_, i) => { const c = $('[data-fi="' + i + '"]', m); return c && c.checked; });
+        if (!keep.length) return toast('Ничего не отмечено');
+        S.addFlyer({ store: store, until: r.until, items: keep });
+        close(); if (closePrev) closePrev();
+        render();
+        toast('Добавил ' + keep.length + ' ' + plural(keep.length, 'цену', 'цены', 'цен') + ' из листовки');
+      };
+    });
+}
