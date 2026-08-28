@@ -414,7 +414,13 @@ export function activityPlan(date){
   }
 
   let walkMin, walkTime;
-  if (weekend){ walkMin = Math.min(90, Math.max(45, budget)); walkTime = toHHMM(toMin(win.from) + used); }
+  if (weekend){
+    // Выходной: времени больше, но не бесконечно. Если в этот день уже стоит силовая,
+    // ходьба ужимается — иначе набегало 130 минут активности при заявленных 75.
+    const cap = budget + 30;                       // «час, иногда максимум полтора»
+    walkMin = Math.max(20, Math.min(budget, cap - used));
+    walkTime = toHHMM(toMin(win.from) + used);
+  }
   else if (used > 0){ walkMin = Math.max(0, Math.min(avail - used, 30)); walkTime = toHHMM(toMin(win.from) + used); }
   else { walkMin = Math.min(Math.max(25, avail), budget); walkTime = win.from; }
 

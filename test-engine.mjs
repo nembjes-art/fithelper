@@ -81,7 +81,18 @@ const slots = E.buildDay(todayISO());
 const mins = slots.reduce((a,s)=>a+(s.minutes||0),0);
 console.log('      слотов:', slots.length, 'минут всего:', mins);
 eq('план не пустой', slots.length > 4, true);
-eq('время в пределах бюджета+30', mins <= S.profile.timeBudgetMin + 30, true);
+// в выходной к тренировке добавляется длинная ходьба, поэтому допуск +45, а не +30
+eq('время дня в пределах бюджета+45', mins <= S.profile.timeBudgetMin + 45, true);
+// проверяем ВСЕ дни недели, а не только сегодняшний: раньше в выходной с силовой
+// набегало 130 минут активности при бюджете 75
+let worstDay = '', worstMin = 0;
+for (let i = 0; i < 7; i++){
+  const dd = addDays(todayISO(), i);
+  const mm = E.buildDay(dd).reduce((a,s)=>a+(s.minutes||0),0);
+  if (mm > worstMin){ worstMin = mm; worstDay = dd; }
+}
+console.log('      самый нагруженный день:', worstDay, worstMin, 'мин');
+eq('ни один день недели не выходит за бюджет+45', worstMin <= S.profile.timeBudgetMin + 45, true);
 
 // 7. чередование недель
 S.setSettings({ weekType:'morning', weekAnchor: (await import('./js/store.js')).mondayOf(todayISO()) });

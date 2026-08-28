@@ -454,3 +454,68 @@ export async function readFlyer(base64, mime, storeHint){
   const until = /^\d{4}-\d{2}-\d{2}$/.test(String(r.until || '')) ? r.until : null;
   return { ok: r.ok !== false && items.length > 0, store: r.store || '', until: until, note: r.note || '', items: items };
 }
+
+/* ---------- упаковка: штрихкод и таблица состава ---------- */
+const PACK_SCHEMA = {
+  type: 'object',
+  properties: {
+    ok: { type: 'boolean' },
+    barcode: { type: 'string', description: 'цифры штрихкода, если видны' },
+    name: { type: 'string' },
+    per100: {
+      type: 'object',
+      properties: {
+        kcal: { type: 'number' }, p: { type: 'number' },
+        f: { type: 'number' }, c: { type: 'number' }, fiber: { type: 'number' }
+      }
+    },
+    packGrams: { type: 'number', description: 'вес всей упаковки в граммах, если написан' },
+    note: { type: 'string' }
+  },
+  required: ['ok']
+};
+
+const PACK_PROMPT = `Ты читаешь упаковку продукта: штрихкод и таблицу пищевой ценности.
+Текст может быть на эстонском, русском, английском, латышском или литовском.
+
+Что вернуть:
+- barcode — цифры под штрихкодом, подряд, без пробелов. Не видно — пустая строка.
+- name — как называется продукт. По-русски, коротко: «Творог 5% Alma», «Овсяные хлопья Rimi».
+- per100 — пищевая ценность НА 100 Г (или на 100 мл для жидкого):
+  kcal (не килоджоули — если написано только kJ, дели на 4.184),
+  p — белки (valgud / proteiin / protein / olbaltumvielas),
+  f — жиры (rasvad / fat / tauki),
+  c — углеводы (susivesikud / carbohydrate / oglhidrati),
+  fiber — клетчатка (kiudained / fibre), если указана.
+- packGrams — сколько граммов во всей упаковке, если написано.
+
+Правила:
+- Если в таблице две колонки — «на 100 г» и «на порцию» — бери ТОЛЬКО колонку на 100 г.
+- Цифры не выдумывай. Не видно таблицы, но виден штрихкод — верни ok:true, barcode и пустой per100.
+- Ничего не разобрать — ok:false и объясни в note по-русски одной фразой.`;
+
+export async function readPack(base64, mime){
+  const parts = [
+    { text: 'Разбери упаковку: штрихкод и состав на 100 г.' },
+    { inline_data: { mime_type: mime || 'image/jpeg', data: base64 } }
+  ];
+  const r = await call(parts, PACK_SCHEMA, PACK_PROMPT);
+  const n = r.per100 || {};
+  let kcal = Number(n.kcal) || 0;
+  // страховка: если модель всё же отдала килоджоули
+  if (kcal > 900) kcal = Math.round(kcal / 4.184);
+  return {
+    ok: r.ok !== false,
+    barcode: String(r.barcode || '').replace(/\D/g, ''),
+    name: String(r.name || '').trim(),
+    packGrams: Math.round(Number(r.packGrams) || 0) || null,
+    note: r.note || '',
+    per100: {
+      kcal: Math.round(kcal),
+      p: +(Number(n.p) || 0).toFixed(1),
+      f: +(Number(n.f) || 0).toFixed(1),
+      c: +(Number(n.c) || 0).toFixed(1),
+      fiber: +(Number(n.fiber) || 0).toFixed(1)
+    }
+  };
+}

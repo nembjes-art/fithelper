@@ -273,3 +273,28 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:14px 0}
 .note-box.ok .t{color:var(--ok)}
 .note-box.warn{background:var(--warn-soft)}
 .note-box.warn .t{color:var(--warn)}
+
+/* ---------- быстрая запись еды ---------- */
+.quick-wrap{
+  display:flex;align-items:stretch;margin-bottom:7px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden
+}
+.quick-wrap:active{background:var(--accent-soft);border-color:var(--accent)}
+.quick-row{
+  display:flex;align-items:center;gap:10px;flex:1;min-width:0;
+  padding:11px 12px;background:none;border:0;
+  color:inherit;text-align:left;cursor:pointer
+}
+.quick-row .body{min-width:0;flex:1}
+.quick-row .ttl{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quick-row .sub{font-size:12px;color:var(--dim);margin-top:2px}
+.quick-row .kc{font-size:15px;font-weight:700;white-space:nowrap}
+.quick-wrap.done{opacity:.45}
+.quick-row.done .ttl{text-decoration:line-through}
+.quick-star{
+  border:0;background:none;color:var(--dim);font-size:18px;line-height:1;
+  padding:0 13px 0 4px;cursor:pointer;flex:0 0 auto
+}
+.quick-star.on{color:var(--warn)}
+.quick-sec{font-size:12px;color:var(--muted);font-weight:600;margin:14px 0 7px;text-transform:uppercase;letter-spacing:.4px}
+.quick-sec:first-child{margin-top:0}

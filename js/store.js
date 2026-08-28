@@ -56,6 +56,7 @@ const DEFAULTS = {
   schedule: {}, // {date: [{id,time,title,desc,kind,minutes}]}
   notes: [],    // {date, text}
   customRecipes: [],   // блюда, собранные AI под предпочтения
+  favorites: [],       // названия блюд в нижнем регистре, закреплённые вверху быстрой записи
   // Цены из сфотографированных листовок: {store, date, until, items:[{key,product,price,pack,per,base,old}]}
   flyers: [],
   // Рацион: какое блюдо стоит в каком приёме пищи по дням недели (1=пн … 7=вс)
@@ -181,6 +182,7 @@ export const S = {
   },
 
   /* еда */
+  get food(){ return state.food; },
   foodFor(date){ return state.food.filter(f => f.date === date); },
   addFood(item){
     const rec = { id: 'f'+Date.now()+Math.random().toString(36).slice(2,6), date: todayISO(), time: new Date().toTimeString().slice(0,5), ...item };
@@ -257,6 +259,19 @@ export const S = {
   mealFor(dow, slot){
     const d = (state.mealPlan.assign || {})[String(dow)];
     return d ? d[slot] : null;
+  },
+
+  /* избранные блюда для записи в один тап */
+  get favorites(){ return state.favorites || (state.favorites = []); },
+  toggleFav(name){
+    const k = String(name || '').trim().toLowerCase();
+    if (!k) return false;
+    const list = state.favorites || (state.favorites = []);
+    const i = list.indexOf(k);
+    if (i >= 0) list.splice(i, 1); else list.unshift(k);
+    state.favorites = list.slice(0, 30);
+    save();
+    return i < 0;
   },
 
   /* цены из листовок */

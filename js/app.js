@@ -3,6 +3,8 @@ import { S, todayISO, addDays, daysBetween, fmtDate, dowRu, isWeekend, mondayOf 
 import * as E from './engine.js';
 import * as G from './gemini.js';
 import * as P from './prices.js';
+import * as Q from './quick.js';
+import * as R from './remind.js';
 
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
@@ -514,8 +516,10 @@ function viewFood(){
     '<button class="btn ok block mb" id="f-ration">Рацион на неделю и список покупок</button>' +
     '<div class="btn-row mb">' +
       '<button class="btn primary" id="f-photo">Фото еды</button>' +
+      '<button class="btn" id="f-pack">Упаковка</button>' +
       '<button class="btn" id="f-manual">Вручную</button>' +
     '</div>' +
+    quickCard() +
     days.map(d => {
       const items = S.foodFor(d);
       const t = E.dayTotals(d);
@@ -535,7 +539,9 @@ function viewFood(){
 
   $('#f-ration').onclick = () => go('ration');
   $('#f-photo').onclick = openPhoto;
+  $('#f-pack').onclick = openPack;
   $('#f-manual').onclick = openManual;
+  bindQuick();
   bindFoodDelete();
 }
 
@@ -868,6 +874,8 @@ function viewPlan(){
 
   main.innerHTML =
   '<div class="view">' +
+    remindCard() +
+
     '<div class="card">' +
       '<h2>Рабочая неделя</h2>' +
       '<div class="chips" id="p-wt">' +
@@ -952,6 +960,7 @@ function viewPlan(){
     }).join('') +
   '</div>';
 
+  bindRemind();
   $('#p-wt').onclick = e => {
     const b = e.target.closest('.chip'); if(!b) return;
     S.setSettings({ weekType: b.dataset.w, weekAnchor: mondayOf(today) });
@@ -1614,4 +1623,223 @@ function showFlyerConfirm(r, storeFallback, closePrev){
         toast('Добавил ' + keep.length + ' ' + plural(keep.length, 'цену', 'цены', 'цен') + ' из листовки');
       };
     });
+}
+
+/* ---------- запись еды в один тап ---------- */
+function quickRow(it, sub, star){
+  return '<div class="quick-wrap' + (it.done ? ' done' : '') + '">' +
+    '<button class="quick-row" data-q="' + esc(it.key) + '">' +
+      '<div class="body"><div class="ttl">' + esc(it.name) + '</div>' +
+      '<div class="sub">' + esc(sub) + '</div></div>' +
+      '<div class="kc">' + num(it.kcal) + '</div>' +
+    '</button>' +
+    (star ? '<button class="quick-star' + (it.fav ? ' on' : '') + '" data-fav="' + esc(it.name) + '">' +
+      (it.fav ? '★' : '☆') + '</button>' : '') +
+  '</div>';
+}
+
+let QUICK = {};   // key -> позиция, чтобы клик знал, что писать
+
+function quickCard(){
+  QUICK = {};
+  const plan = Q.planToday();
+  const recent = Q.recentFoods(8);
+  const yest = Q.yesterday();
+  plan.concat(recent).forEach(it => { QUICK[it.key] = it; });
+
+  if (!plan.length && !recent.length && !yest.length){
+    return '<div class="card"><h2>Записать в один тап</h2>' +
+      '<div class="tiny muted">Здесь появятся блюда твоего рациона и то, что ты ешь чаще всего — чтобы записывать одним нажатием, без фото и без ожидания. Включи рацион или запиши пару приёмов вручную.</div></div>';
+  }
+
+  return '<div class="card"><h2>Записать в один тап</h2>' +
+    (plan.length ? '<div class="quick-sec">Рацион на сегодня</div>' +
+      plan.map(it => quickRow(it, SLOT_RU[it.slot] + (it.grams ? ' · ' + num(it.grams) + ' г' : '') +
+        (it.done ? ' · уже записано' : ''))).join('') : '') +
+
+    (recent.length ? '<div class="quick-sec">Ты это ешь чаще всего</div>' +
+      recent.map(it => quickRow(it,
+        (it.grams ? num(it.grams) + ' г · ' : '') + 'Б ' + num(it.p) + ' Ж ' + num(it.f) + ' У ' + num(it.c),
+        true
+      )).join('') : '') +
+
+    (yest.length ? '<button class="btn block mt" id="q-yest">Повторить вчерашний день — ' +
+      num(yest.reduce((a,f) => a + f.kcal, 0)) + ' ккал, ' + yest.length + ' ' +
+      plural(yest.length,'запись','записи','записей') + '</button>' : '') +
+  '</div>';
+}
+
+function bindQuick(){
+  $$('[data-q]').forEach(el => el.onclick = () => {
+    const it = QUICK[el.dataset.q];
+    if (!it) return;
+    Q.log(it);
+    toast('Записано: ' + it.name + ' — ' + num(it.kcal) + ' ккал');
+    render();
+  });
+  $$('[data-fav]').forEach(el => el.onclick = () => {
+    const on = S.toggleFav(el.dataset.fav);
+    toast(on ? 'Закрепил вверху' : 'Убрал из закреплённых');
+    render();
+  });
+  const y = $('#q-yest');
+  if (y) y.onclick = () => {
+    const items = Q.yesterday();
+    if (!items.length) return;
+    confirmSheet('Повторить вчера',
+      'Запишу все ' + items.length + ' ' + plural(items.length,'запись','записи','записей') +
+      ' вчерашнего дня в сегодняшний, с теми же граммами.',
+      'Записать', () => {
+        Q.logAll(items);
+        toast('Перенёс вчерашний день');
+        render();
+      });
+  };
+}
+
+/* ---------- упаковка: штрихкод + состав ---------- */
+function openPack(){
+  const { el, close } = sheet('Упаковка',
+    '<input type="file" accept="image/*" capture="environment" id="pk-file" style="display:none">' +
+    '<div id="pk-stage">' +
+      '<button class="btn primary block" id="pk-pick">Сфотографировать</button>' +
+      '<div class="tiny dim center mt">Сними штрихкод и таблицу состава — можно на одном кадре. Сначала поищу товар в открытой базе Open Food Facts, там цифры точные. Не найду — прочитаю таблицу с фото.</div>' +
+      '<hr class="sep">' +
+      '<label class="f"><span>Или введи цифры штрихкода руками</span>' +
+        '<input type="number" id="pk-code" inputmode="numeric" placeholder="4740012345678"></label>' +
+      '<button class="btn block" id="pk-find">Найти по штрихкоду</button>' +
+    '</div>');
+
+  const stage = $('#pk-stage', el);
+  const file = $('#pk-file', el);
+  $('#pk-pick', el).onclick = () => file.click();
+
+  $('#pk-find', el).onclick = async () => {
+    const code = $('#pk-code', el).value.trim();
+    if (code.length < 8) return toast('Штрихкод — 8 или 13 цифр');
+    const btn = $('#pk-find', el);
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Ищу…';
+    const found = await Q.lookupBarcode(code);
+    btn.disabled = false; btn.textContent = 'Найти по штрихкоду';
+    if (!found) return toast('В базе такого нет. Сфотографируй таблицу состава.');
+    packPortion(found.name, found.per100, null, close);
+  };
+
+  file.onchange = async () => {
+    const f = file.files[0]; if (!f) return;
+    let img;
+    try { img = await G.fileToBase64(f); }
+    catch(e){ return toast(e.message); }
+
+    stage.innerHTML = '<img class="thumb" src="' + img.dataUrl + '">' +
+      '<button class="btn primary block" id="pk-run"><span class="spin"></span> Читаю…</button>';
+
+    const run = async () => {
+      const btn = $('#pk-run', el);
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Читаю упаковку…';
+      try{
+        const r = await G.readPack(img.base64, img.mime);
+        if (!r.ok) { btn.disabled = false; btn.textContent = 'Попробовать снова'; return toast(r.note || 'Не разобрал упаковку'); }
+
+        // сначала открытая база — там цифры от производителя
+        let name = r.name, per100 = r.per100, src = 'фото';
+        if (r.barcode){
+          btn.innerHTML = '<span class="spin"></span> Ищу в базе…';
+          const off = await Q.lookupBarcode(r.barcode);
+          if (off){ name = off.name || name; per100 = off.per100; src = 'Open Food Facts'; }
+        }
+        if (!(per100.kcal > 0)){
+          btn.disabled = false; btn.textContent = 'Снять ещё раз';
+          return toast('Таблицу состава не видно. Сними её крупнее.');
+        }
+        packPortion(name || 'Продукт', per100, { src: src, packGrams: r.packGrams }, close);
+      }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; toast(e.message); }
+    };
+    $('#pk-run', el).onclick = run;
+    run();
+  };
+}
+
+function packPortion(name, per100, meta, closePrev){
+  const pg = meta && meta.packGrams ? meta.packGrams : 0;
+  sheet('Сколько съел',
+    '<div class="card mb"><b>' + esc(name) + '</b>' +
+      '<div class="tiny dim mt">На 100 г: ' + num(per100.kcal) + ' ккал · Б ' + num(per100.p) +
+      ' · Ж ' + num(per100.f) + ' · У ' + num(per100.c) +
+      (per100.fiber ? ' · клетчатка ' + num(per100.fiber) : '') + '</div>' +
+      (meta && meta.src ? '<div class="tiny dim">Источник: ' + esc(meta.src) + '</div>' : '') +
+    '</div>' +
+    '<label class="f"><span>Граммы</span><input type="number" id="pp-g" inputmode="numeric" value="100"></label>' +
+    '<div class="chips mb">' +
+      [50,100,150,200,250,300].concat(pg ? [pg] : []).map(g =>
+        '<button class="chip" data-g="' + g + '">' + g + ' г' + (g === pg ? ' (пачка)' : '') + '</button>').join('') +
+    '</div>' +
+    '<div id="pp-out" class="verdict blue"><div class="d">—</div></div>' +
+    '<button class="btn primary block mt" id="pp-save">Записать</button>',
+    (m, close) => {
+      const inp = $('#pp-g', m);
+      const upd = () => {
+        const pr = Q.portion(per100, inp.value);
+        const tg = E.targets();
+        const after = E.dayTotals(todayISO()).kcal + pr.kcal;
+        $('#pp-out', m).innerHTML = '<div class="t">' + num(pr.kcal) + ' ккал</div>' +
+          '<div class="d">Б ' + num(pr.p) + ' · Ж ' + num(pr.f) + ' · У ' + num(pr.c) + '. ' +
+          (after > tg.kcal ? 'Выйдешь за лимит на ' + num(after - tg.kcal) + ' ккал.'
+                           : 'Останется ' + num(tg.kcal - after) + ' ккал на день.') + '</div>';
+      };
+      inp.oninput = upd; upd();
+      m.querySelector('.chips').onclick = e => {
+        const b = e.target.closest('[data-g]'); if (!b) return;
+        inp.value = b.dataset.g; upd();
+      };
+      $('#pp-save', m).onclick = () => {
+        const pr = Q.portion(per100, inp.value);
+        if (!(pr.kcal > 0)) return toast('Укажи граммы');
+        Q.log({ name: name, grams: pr.grams, kcal: pr.kcal, p: pr.p, f: pr.f, c: pr.c, src: 'pack' });
+        close(); if (closePrev) closePrev();
+        toast('Записано: ' + name); render();
+      };
+    });
+}
+
+/* ---------- напоминания через календарь телефона ---------- */
+function remindCard(){
+  const s = R.summary(14, 1);
+  return '<div class="card">' +
+    '<h2>Чтобы приложение тебя пинало</h2>' +
+    '<div class="tiny muted mb">Safari не умеет слать уведомления с сайта — это ограничение айфона, не приложения. Обходим: выгружаем расписание в твой Календарь, и напоминания ставит уже он. Работает даже когда приложение закрыто.</div>' +
+    '<div class="btn-row">' +
+      '<button class="btn primary" id="rm-main">Главное, 2 недели</button>' +
+      '<button class="btn" id="rm-all">Весь день</button>' +
+    '</div>' +
+    '<div class="tiny dim mt">Получится ' + s.count + ' ' + plural(s.count,'напоминание','напоминания','напоминаний') +
+      ' — примерно ' + s.perDay + ' в день: еда, добавки, тренировки, отбой. Файл откроется в Календаре, там нажми «Добавить все».</div>' +
+    '<hr class="sep">' +
+    '<button class="btn block" id="rm-how">Как это работает и как убрать</button>' +
+  '</div>';
+}
+
+function bindRemind(){
+  const go = (days, level, label) => {
+    const n = R.download(days, level);
+    toast('Готово: ' + n + ' ' + plural(n,'напоминание','напоминания','напоминаний') + ' · ' + label);
+  };
+  $('#rm-main').onclick = () => go(14, 1, 'открой файл в Календаре');
+  $('#rm-all').onclick  = () => go(14, 2, 'открой файл в Календаре');
+  $('#rm-how').onclick = () => sheet('Напоминания: как это работает',
+    '<div class="card mb"><b>Что делать</b>' +
+      '<div class="small muted mt">1. Нажми «Главное, 2 недели» — скачается файл расписания.<br>' +
+      '2. Открой его — айфон предложит Календарь.<br>' +
+      '3. Выбери «Добавить все» и укажи календарь. Лучше завести отдельный, назвать «Похудение» — так его потом можно скрыть или удалить одной кнопкой.<br>' +
+      '4. Проверь, что у событий включены оповещения: Настройки → Календарь → Оповещения по умолчанию.</div>' +
+    '</div>' +
+    '<div class="card mb"><b>Почему на две недели</b>' +
+      '<div class="small muted mt">Твои смены чередуются, и расписание под каждую своё. Две недели — это полный цикл: утренняя и вечерняя. Как закончится, зайди сюда и выгрузи снова. Если поменяешь сон или окна тренировок — тоже перевыгрузи, старые события останутся, их лучше сначала удалить.</div>' +
+    '</div>' +
+    '<div class="card mb"><b>Как убрать</b>' +
+      '<div class="small muted mt">Календарь → Календари → нажми на «Похудение» → Удалить календарь. Уйдут все события разом. Поэтому и советую отдельный календарь, а не общий.</div>' +
+    '</div>' +
+    '<div class="card"><b>Если хочешь жёстче</b>' +
+      '<div class="small muted mt">В «Командах» можно сделать автоматизацию по времени: например в 22:30 каждый день открывать это приложение. Тогда телефон не просто напомнит, а откроет экран с планом. Команды → Автоматизация → Время суток → Открыть приложение → Safari с адресом приложения.</div>' +
+    '</div>');
 }
