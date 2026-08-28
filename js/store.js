@@ -56,6 +56,9 @@ const DEFAULTS = {
   schedule: {}, // {date: [{id,time,title,desc,kind,minutes}]}
   notes: [],    // {date, text}
   customRecipes: [],   // блюда, собранные AI под предпочтения
+  lifts: {},           // журнал силовых
+  measures: [],        // замеры сантиметром
+  photos: [],          // фото прогресса
   favorites: [],       // названия блюд в нижнем регистре, закреплённые вверху быстрой записи
   // Цены из сфотографированных листовок: {store, date, until, items:[{key,product,price,pack,per,base,old}]}
   flyers: [],
@@ -259,6 +262,59 @@ export const S = {
   mealFor(dow, slot){
     const d = (state.mealPlan.assign || {})[String(dow)];
     return d ? d[slot] : null;
+  },
+
+  /* силовые: подходы по упражнениям */
+  get lifts(){ return state.lifts || (state.lifts = {}); },
+  pushLift(date, exId, set, program){
+    const L = state.lifts || (state.lifts = {});
+    const d = L[date] || (L[date] = { program: program || 'free', sets: {}, note: '' });
+    if (program) d.program = program;
+    (d.sets[exId] || (d.sets[exId] = [])).push(set);
+    save();
+  },
+  popLift(date, exId, index){
+    const d = (state.lifts || {})[date];
+    if (!d || !d.sets[exId]) return;
+    d.sets[exId].splice(index, 1);
+    if (!d.sets[exId].length) delete d.sets[exId];
+    if (!Object.keys(d.sets).length) delete state.lifts[date];
+    save();
+  },
+  setLiftNote(date, note){
+    const L = state.lifts || (state.lifts = {});
+    const d = L[date] || (L[date] = { program: 'free', sets: {}, note: '' });
+    d.note = note; save();
+  },
+
+  /* замеры сантиметром */
+  get measures(){ return state.measures || (state.measures = []); },
+  addMeasure(m){
+    const list = state.measures || (state.measures = []);
+    const date = m.date || todayISO();
+    const i = list.findIndex(function(x){ return x.date === date; });
+    const rec = Object.assign({ date: date }, m);
+    if (i >= 0) list[i] = Object.assign(list[i], rec); else list.push(rec);
+    list.sort(function(a, b){ return a.date < b.date ? -1 : 1; });
+    save();
+    return rec;
+  },
+  delMeasure(date){
+    state.measures = (state.measures || []).filter(function(x){ return x.date !== date; });
+    save();
+  },
+
+  /* фото прогресса */
+  get photos(){ return state.photos || (state.photos = []); },
+  addPhoto(p){
+    const list = state.photos || (state.photos = []);
+    list.unshift(Object.assign({ id: 'ph' + Date.now(), date: todayISO() }, p));
+    state.photos = list.slice(0, 12);
+    save();
+  },
+  delPhoto(id){
+    state.photos = (state.photos || []).filter(function(x){ return x.id !== id; });
+    save();
   },
 
   /* избранные блюда для записи в один тап */

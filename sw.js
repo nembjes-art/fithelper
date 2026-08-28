@@ -1,8 +1,8 @@
 /* sw.js — офлайн-кэш */
-const CACHE = 'fithelper-v13';
+const CACHE = 'fithelper-v14';
 const ASSETS = [
   './', './index.html', './css/style.css',
-  './js/app.js', './js/store.js', './js/engine.js', './js/gemini.js', './js/ui.js', './js/recipes.js', './js/prices.js', './js/quick.js', './js/remind.js', './prices.json',
+  './js/app.js', './js/store.js', './js/engine.js', './js/gemini.js', './js/ui.js', './js/recipes.js', './js/prices.js', './js/quick.js', './js/remind.js', './js/lifts.js', './js/body.js', './prices.json',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png'
 ];
 

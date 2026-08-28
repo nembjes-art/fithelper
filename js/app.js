@@ -5,6 +5,8 @@ import * as G from './gemini.js';
 import * as P from './prices.js';
 import * as Q from './quick.js';
 import * as R from './remind.js';
+import * as L from './lifts.js';
+import * as B from './body.js';
 
 import { $, $$, h, esc, num, toast, sheet, confirmSheet, ring, meter } from './ui.js';
 
@@ -35,7 +37,7 @@ const DOW_FULL = ['','Понедельник','Вторник','Среда','Ч�
 const SLOT_RU = { breakfast:'Завтрак', lunch:'Обед', snack:'Перекус', dinner:'Ужин' };
 function plural(n, a1, a2, a5){ const x=Math.abs(n)%100, y=x%10; if(x>10&&x<20)return a5; if(y>1&&y<5)return a2; if(y===1)return a1; return a5; }
 
-const TITLES = { today:'Сегодня', food:'Дневник еды', weight:'Вес', plan:'План', stats:'Итоги', settings:'Настройки', ration:'Рацион' };
+const TITLES = { today:'Сегодня', food:'Дневник еды', weight:'Вес', plan:'План', stats:'Итоги', settings:'Настройки', ration:'Рацион', lift:'Тренировка', body:'Замеры и фото' };
 let view = 'today';
 
 /* ================= РОУТЕР ================= */
@@ -56,7 +58,7 @@ function render(){
   const sub = $('#viewSub');
   const w = E.currentWeight();
   sub.textContent = view === 'settings' ? '' : num(w,1) + ' кг → ' + S.profile.goalWeight + ' кг';
-  ({ today:viewToday, food:viewFood, weight:viewWeight, plan:viewPlan, stats:viewStats, settings:viewSettings, ration:viewRation }[view] || viewToday)();
+  ({ today:viewToday, food:viewFood, weight:viewWeight, plan:viewPlan, stats:viewStats, settings:viewSettings, ration:viewRation, lift:viewLift, body:viewBody }[view] || viewToday)();
 }
 
 /* ================= ОНБОРДИНГ ================= */
@@ -162,6 +164,9 @@ function viewToday(){
       '<button class="btn primary" id="t-photo">Фото еды</button>' +
       '<button class="btn" id="t-manual">Вручную</button>' +
     '</div>' +
+    (L.programFor(todayISO()) ? '<button class="btn primary block mt" id="t-lift">' +
+      esc(L.programFor(todayISO()).title) + ' — записать подходы</button>' : '') +
+
     '<div class="btn-row mt">' +
       '<button class="btn ok" id="t-what">Что съесть?</button>' +
       '<button class="btn" id="t-can">Можно ли?</button>' +
@@ -228,6 +233,7 @@ function viewToday(){
 
   $('#t-photo').onclick = openPhoto;
   $('#t-manual').onclick = openManual;
+  if ($('#t-lift')) $('#t-lift').onclick = () => go('lift');
   $('#t-what').onclick = openSuggest;
   $('#t-can').onclick = openJudge;
   $('#t-steps-save').onclick = () => {
@@ -796,6 +802,9 @@ function viewWeight(){
           '<button class="btn primary" id="w-save">Записать</button></div></label>') +
     '</div>' +
 
+    '<button class="btn ok block mb" id="w-body">Замеры сантиметром и фото прогресса' +
+      (B.isDue() ? ' — пора' : '') + '</button>' +
+
     '<div class="card">' +
       '<div class="grid3 mb">' +
         '<div class="stat"><b>'+num(pr.lost,1)+'</b><span>сброшено, кг</span></div>' +
@@ -824,6 +833,7 @@ function viewWeight(){
     '</div>' +
   '</div>';
 
+  $('#w-body').onclick = () => go('body');
   const ws = $('#w-save');
   if (ws) ws.onclick = () => {
     const val = Number($('#w-val').value);
@@ -874,6 +884,8 @@ function viewPlan(){
 
   main.innerHTML =
   '<div class="view">' +
+'<button class="btn primary block mb" id="p-lift">Журнал силовых</button>' +
+
     remindCard() +
 
     '<div class="card">' +
@@ -960,6 +972,7 @@ function viewPlan(){
     }).join('') +
   '</div>';
 
+  $('#p-lift').onclick = () => go('lift');
   bindRemind();
   $('#p-wt').onclick = e => {
     const b = e.target.closest('.chip'); if(!b) return;
@@ -1842,4 +1855,201 @@ function bindRemind(){
     '<div class="card"><b>Если хочешь жёстче</b>' +
       '<div class="small muted mt">В «Командах» можно сделать автоматизацию по времени: например в 22:30 каждый день открывать это приложение. Тогда телефон не просто напомнит, а откроет экран с планом. Команды → Автоматизация → Время суток → Открыть приложение → Safari с адресом приложения.</div>' +
     '</div>');
+}
+
+/* ---------- журнал силовых ---------- */
+let LIFT_FORCE = null;
+function viewLift(){
+  const d = todayISO();
+  const sess0 = L.sessionFor(d);
+  // если сегодня по плану силовой нет, но человек уже начал писать подходы
+  // или сам выбрал программу — показываем её, а не заглушку
+  const prog = L.programFor(d)
+    || (LIFT_FORCE ? L.PROGRAMS[LIFT_FORCE] : null)
+    || (sess0 && L.PROGRAMS[sess0.program] ? L.PROGRAMS[sess0.program] : null);
+  const done = L.doneCount(d);
+  const vol = L.volume(d);
+  const sess = L.recentSessions(28);
+
+  if (!prog){
+    main.innerHTML = '<div class="view"><div class="card">' +
+      '<h2>Сегодня силовой нет</h2>' +
+      '<div class="tiny muted mb">По плану сегодня интервалы или отдых. Силовые стоят в понедельник, четверг и субботу — так мышцы успевают восстановиться между сессиями.</div>' +
+      '<div class="btn-row"><button class="btn" data-prog="A">Всё равно сделать A</button>' +
+      '<button class="btn" data-prog="B">Сделать B</button></div>' +
+      '</div>' + liftHistoryCard(sess) + '</div>';
+    $$('[data-prog]').forEach(el => el.onclick = () => { LIFT_FORCE = el.dataset.prog; render(); });
+    return;
+  }
+
+  main.innerHTML = '<div class="view">' +
+    '<div class="card">' +
+      '<div class="row between mb"><h2 style="margin:0">' + esc(prog.title) + '</h2>' +
+      '<span class="badge ' + (done.sets ? 'ok' : 'warn') + '">' + done.sets + ' ' + plural(done.sets,'подход','подхода','подходов') + '</span></div>' +
+      '<div class="tiny muted">' + (done.sets
+        ? 'Тоннаж сегодня ' + num(vol) + ' кг. Это вес × повторы по всем подходам — единственная цифра, которая честно показывает, растёшь ты или топчешься.'
+        : 'Записывай каждый подход сразу после него, а не в конце. Приложение подскажет вес по прошлой тренировке — в этом весь смысл журнала.') +
+      '</div>' +
+    '</div>' +
+    prog.ex.map(exCard).join('') +
+    '<div class="card"><h2>Как это работает</h2>' +
+      '<div class="tiny muted">Закрыл все подходы с целевыми повторами — в следующий раз приложение само поднимет вес. Не добрал — оставит тот же. На дефиците калорий это единственное, что удерживает мышцы: тело сохраняет то, что регулярно нагружают.</div>' +
+    '</div>' +
+    liftHistoryCard(sess) +
+  '</div>';
+
+  bindLift(d, prog);
+}
+
+
+function exCard(ex){
+  const d = todayISO();
+  const sets = L.setsOf(d, ex.id);
+  const sg = L.suggest(ex.id, d);
+  const unit = ex.kind === 'time' ? 'сек' : 'повт';
+  const showKg = ex.kind === 'weight';
+
+  return '<div class="card ex-card">' +
+    '<div class="ex-head"><b>' + esc(ex.name) + '</b>' +
+      '<span class="tgt">' + ex.sets + '×' + ex.reps + (showKg ? '' : ' ' + unit) + '</span></div>' +
+    '<div class="ex-hint">' + esc(ex.note) + '</div>' +
+    (sg ? '<div class="ex-why' + (sg.up ? ' up' : '') + '">' + esc(sg.why) + '</div>' : '') +
+    (sets.length ? '<div class="set-list">' + sets.map((s, i) =>
+      '<span class="set-chip' + (s.reps >= ex.reps ? ' ok' : '') + '">' +
+        (showKg && s.kg ? L.fmtKg(s.kg) + ' × ' : '') + num(s.reps) + (showKg ? '' : ' ' + unit) +
+        '<button data-del="' + ex.id + '|' + i + '">×</button></span>').join('') + '</div>' : '') +
+    '<div class="set-add">' +
+      (showKg ? '<label class="f"><span>Вес, кг</span><input type="number" step="0.5" inputmode="decimal" data-kg="' + ex.id + '" value="' + (sg && sg.kg ? sg.kg : '') + '"></label>' : '') +
+      '<label class="f"><span>' + (ex.kind === 'time' ? 'Секунды' : 'Повторы') + '</span>' +
+        '<input type="number" inputmode="numeric" data-reps="' + ex.id + '" value="' + (sg ? sg.reps : ex.reps) + '"></label>' +
+      '<button class="btn primary" data-add="' + ex.id + '">+</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function bindLift(d, prog){
+  $$('[data-add]').forEach(el => el.onclick = () => {
+    const id = el.dataset.add;
+    const kgEl = $('[data-kg="' + id + '"]');
+    const reps = Number($('[data-reps="' + id + '"]').value) || 0;
+    if (!reps) return toast('Сколько повторов сделал?');
+    L.addSet(d, id, kgEl ? Number(kgEl.value) || 0 : 0, reps);
+    const ex = L.BY_EX[id];
+    const n = L.setsOf(d, id).length;
+    render();
+    toast(n >= ex.sets ? ex.name + ' — всё, ' + n + ' из ' + ex.sets : ex.name + ': подход ' + n + ' из ' + ex.sets);
+  });
+  $$('[data-del]').forEach(el => el.onclick = () => {
+    const [id, i] = el.dataset.del.split('|');
+    L.removeSet(d, id, Number(i));
+    render();
+  });
+}
+
+function liftHistoryCard(sess){
+  if (!sess.length) return '';
+  const last = sess[sess.length - 1];
+  const perWeek = Math.round(sess.length / 4 * 10) / 10;
+  return '<div class="card"><h2>Силовые за месяц</h2>' +
+    '<div class="row between mb"><span class="muted small">Всего тренировок</span><b>' + sess.length + '</b></div>' +
+    '<div class="row between mb"><span class="muted small">В среднем в неделю</span>' +
+      '<b class="' + (perWeek >= 2.5 ? '' : 'dim') + '">' + num(perWeek,1) + '</b></div>' +
+    '<div class="row between"><span class="muted small">Последняя</span><b>' + esc(fmtDate(last)) + '</b></div>' +
+    '<div class="tiny dim mt">Три силовых в неделю — норма для удержания мышц на дефиците. Две — минимум, ниже начнёшь терять вместе с жиром и мышцы.</div>' +
+  '</div>';
+}
+
+/* ---------- замеры и фото ---------- */
+function viewBody(){
+  const l = B.latest();
+  const bf = B.bodyFat();
+  const w = E.currentWeight();
+  const lean = B.leanMass(w);
+  const due = B.isDue();
+  const ph = B.photos();
+
+  main.innerHTML = '<div class="view">' +
+    '<div class="card">' +
+      '<div class="row between mb"><h2 style="margin:0">Замеры</h2>' +
+        (due ? '<span class="badge warn">пора мерить</span>' : '<span class="badge ok">' + B.daysSince() + ' дн. назад</span>') + '</div>' +
+      '<div class="tiny muted mb">Вес скачет от воды и соли и может стоять две недели, пока жир уходит. Талия так не врёт. Мерь раз в две недели, утром, натощак, всегда одинаково.</div>' +
+      (l ? '<div class="mz-grid">' + B.FIELDS.filter(f => l[f.id] != null).map(f => {
+        const dl = B.delta(f.id);
+        const good = dl && dl.fromStart != null && dl.fromStart < 0;
+        return '<div class="mz-cell"><div class="n">' + esc(f.name) + '</div>' +
+          '<div class="v">' + num(dl.now,1) + ' см</div>' +
+          (dl.fromStart != null
+            ? '<div class="d ' + (good ? 'good' : 'bad') + '">' + (dl.fromStart > 0 ? '+' : '') + num(dl.fromStart,1) + ' см за ' + dl.days + ' дн.</div>'
+            : '<div class="d dim">первый замер</div>') +
+        '</div>';
+      }).join('') + '</div>' : '<div class="empty">Пока ни одного замера. Возьми сантиметр — это две минуты.</div>') +
+      '<button class="btn primary block mt" id="b-add">' + (l ? 'Новый замер' : 'Записать первый замер') + '</button>' +
+    '</div>' +
+
+    (bf != null ? '<div class="card"><h2>Состав тела</h2>' +
+      '<div class="row between mb"><span class="muted small">Жира примерно</span><b style="font-size:20px">' + num(bf,1) + ' %</b></div>' +
+      (lean ? '<div class="row between mb"><span class="muted small">Сухая масса</span><b>' + num(lean,1) + ' кг</b></div>' : '') +
+      '<div class="tiny dim">Считается по талии, шее и росту — формула ВМФ США. Точность ±3–4 %, поэтому смотри не на само число, а на то, как оно меняется. Сухая масса не должна падать: если падает — мало белка или мало силовых.</div>' +
+    '</div>' : '') +
+
+    '<div class="card">' +
+      '<div class="row between mb"><h2 style="margin:0">Фото прогресса</h2>' +
+        (B.photoDue() ? '<span class="badge warn">пора снять</span>' : '') + '</div>' +
+      '<div class="tiny muted mb">Раз в две недели, утром, одно и то же место и свет, та же поза. В зеркале ты себя не видишь — глаз привыкает. На фото разница за месяц бросается в глаза.</div>' +
+      (ph.length >= 2
+        ? (() => { const pr = B.photoPair(); return '<div class="ph-grid">' +
+            '<figure><img src="' + pr.then.dataUrl + '"><figcaption>' + esc(fmtDate(pr.then.date)) +
+              (pr.then.weight ? ' · ' + num(pr.then.weight,1) + ' кг' : '') + '</figcaption></figure>' +
+            '<figure><img src="' + pr.now.dataUrl + '"><figcaption>' + esc(fmtDate(pr.now.date)) +
+              (pr.now.weight ? ' · ' + num(pr.now.weight,1) + ' кг' : '') + '</figcaption></figure>' +
+          '</div>'; })()
+        : (ph.length === 1
+            ? '<div class="ph-grid"><figure><img src="' + ph[0].dataUrl + '"><figcaption>' + esc(fmtDate(ph[0].date)) + '</figcaption></figure></div>'
+            : '<div class="empty">Первое фото — точка отсчёта. Сделай сегодня.</div>')) +
+      '<input type="file" accept="image/*" capture="environment" id="b-file" style="display:none">' +
+      '<button class="btn block mt" id="b-photo">Сделать фото</button>' +
+      (ph.length ? '<div class="chips mt">' + ph.map(p =>
+        '<button class="chip" data-ph="' + esc(p.id) + '">' + esc(fmtDate(p.date)) + ' ✕</button>').join('') + '</div>' : '') +
+    '</div>' +
+  '</div>';
+
+  $('#b-add').onclick = openMeasure;
+  const file = $('#b-file');
+  $('#b-photo').onclick = () => file.click();
+  file.onchange = async () => {
+    const f = file.files[0]; if (!f) return;
+    try{
+      const img = await G.fileToBase64(f, 900, 0.72);
+      S.addPhoto({ dataUrl: img.dataUrl, weight: E.currentWeight() });
+      render(); toast('Фото сохранено');
+    }catch(e){ toast(e.message); }
+  };
+  $$('[data-ph]').forEach(el => el.onclick = () => {
+    confirmSheet('Удалить фото', 'Фото за ' + fmtDate((S.photos.find(p => p.id === el.dataset.ph)||{}).date) + ' удалится навсегда.',
+      'Удалить', () => { S.delPhoto(el.dataset.ph); render(); toast('Удалил'); });
+  });
+}
+
+function openMeasure(){
+  const l = B.latest() || {};
+  sheet('Замеры, см',
+    '<div class="tiny muted mb">Мерь утром, натощак, не втягивая живот. Сантиметр плотно, но не врезается. Пустые поля просто пропустятся.</div>' +
+    B.FIELDS.map(f =>
+      '<label class="f"><span>' + esc(f.name) + (f.main ? ' — главная цифра' : '') + '</span>' +
+        '<input type="number" step="0.5" inputmode="decimal" data-m="' + f.id + '" value="' + (l[f.id] != null ? l[f.id] : '') + '" placeholder="' + esc(f.hint) + '">' +
+      '<span class="tiny dim" style="margin-top:3px;display:block">' + esc(f.hint) + '</span></label>').join('') +
+    '<button class="btn primary block mt" id="mz-save">Записать</button>',
+    (m, close) => {
+      $('#mz-save', m).onclick = () => {
+        const rec = {};
+        let any = false;
+        B.FIELDS.forEach(f => {
+          const v = Number($('[data-m="' + f.id + '"]', m).value);
+          if (v > 0){ rec[f.id] = Math.round(v * 10) / 10; any = true; }
+        });
+        if (!any) return toast('Заполни хотя бы талию');
+        S.addMeasure(rec);
+        close(); render(); toast('Замеры записаны');
+      };
+    });
 }
