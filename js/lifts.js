@@ -75,6 +75,23 @@ function best(sets){
   }, null);
 }
 
+/* «Рабочий вес» — минимум по ПЛАНОВЫМ подходам.
+   Почему минимум, а не максимум: прогрессия должна опираться на вес, который
+   человек удержал во всех подходах. Разминочно-тяжёлый первый подход
+   (60×12, дальше 50×12×3) — это не рабочий вес; надбавка от него уводит
+   в перегруз, после которого план уже не закрыть.
+   Добивочные подходы сверх ex.sets в расчёт не берём — они всегда легче. */
+function working(sets, ex){
+  const all = sets || [];
+  const planned = (ex && ex.sets) ? all.slice(0, ex.sets) : all;
+  return planned.reduce(function(a, s){
+    if (!a) return s;
+    if ((s.kg || 0) < (a.kg || 0)) return s;
+    if ((s.kg || 0) === (a.kg || 0) && (s.reps || 0) < (a.reps || 0)) return s;
+    return a;
+  }, null);
+}
+
 /* Что ставить сегодня. Правило простое и рабочее:
    выполнил все подходы с целевыми повторами — добавляй шаг, иначе повторяй тот же вес. */
 export function suggest(exId, date){
@@ -85,17 +102,25 @@ export function suggest(exId, date){
     return { kg: 0, reps: ex.reps, first: true,
       why: 'Первый раз. Возьми вес, с которым сделаешь ' + ex.reps + ' повторов и останется 2 в запасе — это и будет точка отсчёта.' };
   }
-  const b = best(prev.sets);
-  const full = prev.sets.length >= ex.sets && prev.sets.every(function(s){ return (s.reps || 0) >= ex.reps; });
+  const w = working(prev.sets, ex);
+  const baseKg = (w && w.kg) || 0;
+  const step = Number(ex.step) || 0;
+  // засчитываем только ПЛАНОВЫЕ подходы: лёгкая добивка пятым подходом
+  // не должна навсегда блокировать прибавку
+  const planned = (prev.sets || []).slice(0, ex.sets);
+  const full = planned.length >= ex.sets && planned.every(function(s){ return (s.reps || 0) >= ex.reps; });
   if (full){
-    const kg = ex.kind === 'weight' ? Math.round((( b.kg || 0) + ex.step) * 2) / 2 : (b.kg || 0);
-    const reps = ex.kind === 'weight' ? ex.reps : (b.reps || ex.reps) + ex.step;
+    const kg = ex.kind === 'weight' ? Math.round((baseKg + step) * 2) / 2 : baseKg;
+    // повторы растут от ЦЕЛИ, а не от лучшего подхода: иначе один рекордный
+    // подход (25 отжиманий при цели 12) задирает план до недостижимого
+    const reps = ex.kind === 'weight' ? ex.reps : ex.reps + step;
     return { kg: kg, reps: reps, up: true, prev: prev,
       why: ex.kind === 'weight'
-        ? 'В прошлый раз закрыл все ' + ex.sets + '×' + ex.reps + ' с ' + fmtKg(b.kg) + '. Добавляй ' + fmtKg(ex.step) + '.'
-        : 'В прошлый раз закрыл всё. Добавь ' + ex.step + (ex.kind === 'time' ? ' сек.' : ' повтора.') };
+        ? 'В прошлый раз закрыл все ' + ex.sets + '×' + ex.reps + ' с ' + fmtKg(baseKg) + '. Добавляй ' + fmtKg(step) + '.'
+        : 'В прошлый раз закрыл все ' + ex.sets + '×' + ex.reps + '. Ставь ' + reps +
+          (ex.kind === 'time' ? ' сек.' : ' повторов.') };
   }
-  return { kg: b.kg || 0, reps: ex.reps, up: false, prev: prev,
+  return { kg: baseKg, reps: ex.reps, up: false, prev: prev,
     why: 'В прошлый раз не добрал повторы. Тот же вес, добей ' + ex.sets + '×' + ex.reps + ' — потом добавим.' };
 }
 
@@ -110,7 +135,8 @@ export function addSet(date, exId, kg, reps){
   // программу берём по плану дня, а если её нет — по самому упражнению
   const prog = programFor(d);
   const key = prog ? prog.key : ((BY_EX[exId] && BY_EX[exId].program) || 'free');
-  S.pushLift(d, exId, { kg: Number(kg) || 0, reps: Number(reps) || 0 }, key);
+  // отрицательный вес/повторы ломают тоннаж и прогрессию — режем на входе
+  S.pushLift(d, exId, { kg: Math.max(0, Number(kg) || 0), reps: Math.max(0, Number(reps) || 0) }, key);
   return setsOf(d, exId);
 }
 
@@ -125,7 +151,7 @@ export function volume(date){
   let v = 0;
   Object.keys(s.sets).forEach(function(id){
     const ex = BY_EX[id];
-    s.sets[id].forEach(function(x){
+    (s.sets[id] || []).forEach(function(x){
       // для «планок» и отжиманий тоннаж считать нечестно — берём только вес×повторы
       if (ex && ex.kind === 'weight') v += (x.kg || 0) * (x.reps || 0);
     });
@@ -136,27 +162,28 @@ export function volume(date){
 export function doneCount(date){
   const s = sessionFor(date);
   if (!s || !s.sets) return { sets: 0, ex: 0 };
-  const ids = Object.keys(s.sets).filter(function(id){ return s.sets[id].length; });
+  const ids = Object.keys(s.sets).filter(function(id){ return (s.sets[id] || []).length; });
   return { sets: ids.reduce(function(a, id){ return a + s.sets[id].length; }, 0), ex: ids.length };
 }
 
 /* Прогресс по упражнению: лучший подход по датам, для графика и мотивации */
 export function history(exId, limit){
   const all = S.lifts || {};
+  const n = Math.max(1, Math.round(Number(limit) || 10));
   return Object.keys(all).filter(function(d){
     return all[d].sets && (all[d].sets[exId] || []).length;
-  }).sort().slice(-(limit || 10)).map(function(d){
-    const b = best(all[d].sets[exId]);
+  }).sort().slice(-n).map(function(d){
+    const b = best(all[d].sets[exId]) || {};   // здесь лучший подход уместен: это график рекордов
     return { date: d, kg: b.kg || 0, reps: b.reps || 0 };
   });
 }
 
 /* Сколько силовых сделано за последние N дней — для раздела «Итоги» */
 export function recentSessions(days){
-  const n = days || 28;
+  const n = Math.max(1, Math.round(Number(days) || 28));
   const from = addDays(todayISO(), -n);
   const all = S.lifts || {};
   return Object.keys(all).filter(function(d){
-    return d >= from && all[d].sets && Object.keys(all[d].sets).some(function(k){ return all[d].sets[k].length; });
+    return d >= from && all[d].sets && Object.keys(all[d].sets).some(function(k){ return (all[d].sets[k] || []).length; });
   }).sort();
 }

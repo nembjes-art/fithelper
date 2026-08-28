@@ -55,6 +55,9 @@ $('#tabs').addEventListener('click', e => {
 
 function render(){
   if (!S.profile.onboarded) return viewOnboard();
+  // Молчаливая потеря данных — худшее, что может случиться. Если хранилище
+  // отказалось писать, человек должен узнать об этом сразу, а не на перезагрузке.
+  if (S.saveError){ const m = S.saveError; S.clearSaveError(); setTimeout(function(){ toast(m, 6000); }, 60); }
   const sub = $('#viewSub');
   const w = E.currentWeight();
   sub.textContent = view === 'settings' ? '' : num(w,1) + ' кг → ' + S.profile.goalWeight + ' кг';
@@ -1732,7 +1735,12 @@ function openPack(){
     if (code.length < 8) return toast('Штрихкод — 8 или 13 цифр');
     const btn = $('#pk-find', el);
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Ищу…';
-    const found = await Q.lookupBarcode(code);
+    let found = null;
+    try { found = await Q.lookupBarcode(code); }
+    catch(e){
+      btn.disabled = false; btn.textContent = 'Найти по штрихкоду';
+      return toast('Нет связи с базой. В магазине бывает — сфотографируй таблицу состава.');
+    }
     btn.disabled = false; btn.textContent = 'Найти по штрихкоду';
     if (!found) return toast('В базе такого нет. Сфотографируй таблицу состава.');
     packPortion(found.name, found.per100, null, close);
@@ -1758,8 +1766,10 @@ function openPack(){
         let name = r.name, per100 = r.per100, src = 'фото';
         if (r.barcode){
           btn.innerHTML = '<span class="spin"></span> Ищу в базе…';
-          const off = await Q.lookupBarcode(r.barcode);
-          if (off){ name = off.name || name; per100 = off.per100; src = 'Open Food Facts'; }
+          try{
+            const off = await Q.lookupBarcode(r.barcode);
+            if (off){ name = off.name || name; per100 = off.per100; src = 'Open Food Facts'; }
+          }catch(_){ /* нет сети — цифры уже прочитаны с фото */ }
         }
         if (!(per100.kcal > 0)){
           btn.disabled = false; btn.textContent = 'Снять ещё раз';
@@ -2019,7 +2029,7 @@ function viewBody(){
   file.onchange = async () => {
     const f = file.files[0]; if (!f) return;
     try{
-      const img = await G.fileToBase64(f, 900, 0.72);
+      const img = await G.fileToBase64(f, 720, 0.62);
       S.addPhoto({ dataUrl: img.dataUrl, weight: E.currentWeight() });
       render(); toast('Фото сохранено');
     }catch(e){ toast(e.message); }
@@ -2036,7 +2046,7 @@ function openMeasure(){
     '<div class="tiny muted mb">Мерь утром, натощак, не втягивая живот. Сантиметр плотно, но не врезается. Пустые поля просто пропустятся.</div>' +
     B.FIELDS.map(f =>
       '<label class="f"><span>' + esc(f.name) + (f.main ? ' — главная цифра' : '') + '</span>' +
-        '<input type="number" step="0.5" inputmode="decimal" data-m="' + f.id + '" value="' + (l[f.id] != null ? l[f.id] : '') + '" placeholder="' + esc(f.hint) + '">' +
+        '<input type="number" step="0.5" inputmode="decimal" data-m="' + f.id + '" value="" placeholder="' + (l[f.id] != null ? 'в прошлый раз ' + num(l[f.id],1) : '—') + '">' +
       '<span class="tiny dim" style="margin-top:3px;display:block">' + esc(f.hint) + '</span></label>').join('') +
     '<button class="btn primary block mt" id="mz-save">Записать</button>',
     (m, close) => {

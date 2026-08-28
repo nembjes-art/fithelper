@@ -13,14 +13,17 @@ export function planToday(date){
   const ids = slots.map(function(sl){ return day[sl]; });
   const base = ids.reduce(function(a, id){ return a + ((E.BY_ID(id) || {}).kcal || 0); }, 0);
   const tg = E.targets();
-  const k = base ? tg.kcal / base : 1;
+  // Масштабируем порции под дневной лимит только когда назначены ВСЕ приёмы пищи.
+  // Иначе при одном заполненном слоте коэффициент раздувал завтрак до 1800 ккал.
+  const full = ids.every(Boolean);
+  const k = (full && base) ? tg.kcal / base : 1;
   const eaten = S.foodFor(d).map(function(f){ return String(f.name).toLowerCase(); });
 
   return slots.map(function(sl, i){
     const r = E.BY_ID(ids[i]);
     if (!r) return null;
     return {
-      key: 'plan:' + r.id,
+      key: 'plan:' + sl + ':' + r.id,   // слот в ключе: одно блюдо может стоять и на завтрак, и на ужин
       slot: sl,
       name: r.name,
       grams: Math.round((r.ing || []).reduce(function(a, x){ return a + (x[2] === 'г' ? x[1] : 0); }, 0) * k) || 0,
@@ -34,7 +37,7 @@ export function planToday(date){
 /* ---------- то, что ты ешь чаще всего ----------
    Ничего не храним отдельно: считаем прямо из дневника. */
 export function recentFoods(limit){
-  const byName = {};
+  const byName = Object.create(null);   // без прототипа: блюдо с именем «constructor» иначе теряется
   const log = S.food || [];
   for (let i = log.length - 1; i >= 0; i--){
     const f = log[i];
@@ -50,7 +53,7 @@ export function recentFoods(limit){
     }
     byName[key].uses++;
   }
-  const fav = (S.favorites || []).reduce(function(a, n){ a[n] = 1; return a; }, {});
+  const fav = (S.favorites || []).reduce(function(a, n){ a[n] = 1; return a; }, Object.create(null));
   return Object.keys(byName).map(function(k){
     const it = byName[k];
     it.fav = !!fav[k];
@@ -92,17 +95,30 @@ export function lookupBarcode(code){
   if (c.length < 8) return Promise.resolve(null);
   const url = 'https://world.openfoodfacts.org/api/v2/product/' + c +
     '.json?fields=product_name,product_name_ru,brands,quantity,serving_size,nutriments';
-  return fetch(url, { headers: { 'Accept': 'application/json' } })
-    .then(function(r){ return r.ok ? r.json() : null; })
+  // Отдельно ловим «нет сети» — иначе офлайн неотличим от «товара нет в базе»,
+  // и человек в подвале магазина зря тратит запросы к ИИ.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false){
+    return Promise.reject(new Error('offline'));
+  }
+  const opts = { headers: { 'Accept': 'application/json' } };
+  if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) opts.signal = AbortSignal.timeout(8000);
+  return fetch(url, opts)
+    .then(function(r){
+      if (!r.ok) return null;
+      const ct = r.headers.get('content-type') || '';
+      // сервис-воркер на неудачном кросс-доменном запросе может отдать index.html
+      if (ct.indexOf('json') < 0) return null;
+      return r.json();
+    })
     .then(function(j){
       if (!j || j.status !== 1 || !j.product) return null;
       const p = j.product, n = p.nutriments || {};
       const per100 = {
         kcal: Math.round(n['energy-kcal_100g'] || (n.energy_100g ? n.energy_100g / 4.184 : 0)),
-        p: +(n.proteins_100g || 0).toFixed(1),
-        f: +(n.fat_100g || 0).toFixed(1),
-        c: +(n.carbohydrates_100g || 0).toFixed(1),
-        fiber: +(n.fiber_100g || 0).toFixed(1)
+        p: +(Number(n.proteins_100g) || 0).toFixed(1),
+        f: +(Number(n.fat_100g) || 0).toFixed(1),
+        c: +(Number(n.carbohydrates_100g) || 0).toFixed(1),
+        fiber: +(Number(n.fiber_100g) || 0).toFixed(1)
       };
       if (!(per100.kcal > 0)) return null;
       const name = [p.brands ? String(p.brands).split(',')[0].trim() : '', p.product_name_ru || p.product_name || '']
@@ -115,7 +131,10 @@ export function lookupBarcode(code){
         per100: per100
       };
     })
-    .catch(function(){ return null; });
+    .catch(function(e){
+      if (e && e.message === 'offline') throw e;
+      return null;
+    });
 }
 
 /* Пересчёт «на 100 г» в порцию */

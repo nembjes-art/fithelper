@@ -137,7 +137,14 @@ export function bestFor(key){
 /* Сколько базовых единиц нужно: г/кг → кг, шт → шт. */
 function toBase(qty, unit, base){
   const u = String(unit || '').toLowerCase();
-  if (base === 'шт') return u === 'шт' ? qty : qty / 60;   // 60 г ≈ 1 яйцо
+  if (base === 'шт'){
+    // Штучный товар (яйца). Единицу надо разобрать ДО пересчёта, иначе килограммы
+    // делились на 60 как граммы и цена яиц выходила нулевой.
+    if (u === 'шт') return qty;
+    if (u === 'кг') return qty * 1000 / 60;
+    if (u === 'г')  return qty / 60;
+    return qty / 60;
+  }
   if (u === 'кг') return qty;
   if (u === 'г')  return qty / 1000;
   if (u === 'мл') return qty / 1000;
@@ -267,7 +274,8 @@ export function swapHints(list){
     const rule = SWAPS.find(function(s){ return s[0] === key && s[1] !== key; });
     if (!rule) return;
     const from = bestFor(key), to = bestFor(rule[1]);
-    if (!from || !to || to.per >= from.per) return;
+    // сравнивать €/кг с €/шт бессмысленно — замену предлагаем только внутри одной базы
+    if (!from || !to || from.base !== to.base || to.per >= from.per) return;
     const need = toBase(row.qty, row.unit, from.base);
     const save = Math.round(need * (from.per - to.per) * 100) / 100;
     if (save < 0.5) return;

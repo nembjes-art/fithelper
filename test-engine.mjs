@@ -155,5 +155,26 @@ const afterFlyer = P.bestFor('курица_грудка');
 eq('листовка Lidl перебила базу', afterFlyer.per, 4.49);
 eq('листовка помечена', afterFlyer.fromFlyer, true);
 
+/* ---------- защита от потери данных ---------- */
+console.log('\n--- сохранность данных ---');
+S.addFood({ name:'Проверочное блюдо', kcal:500, p:10, f:10, c:10 });
+S.addMeasure({ waist:100, neck:40 });
+eq('еда записалась', S.food.length > 0, true);
+S.reset();
+eq('сброс очистил память', S.food.length, 0);
+eq('сброс очистил хранилище', JSON.parse(localStorage.getItem('fithelper.v1')).food.length, 0);
+eq('сброс очистил замеры', S.measures.length, 0);
+
+S.setProfile({ sex:'m', age:24, height:180, startWeight:100, goalWeight:80,
+  startDate: addDays(todayISO(),-30), stepsWeekday:4500, stepsWeekend:1500, timeBudgetMin:75, onboarded:true });
+
+const realSet = localStorage.setItem;
+localStorage.setItem = () => { const e = new Error('full'); e.name = 'QuotaExceededError'; throw e; };
+S.setSettings({ strictMode: false });
+localStorage.setItem = realSet;
+eq('переполнение памяти видно наружу', typeof S.saveError, 'string');
+S.clearSaveError();
+eq('ошибка сбрасывается', S.saveError, null);
+
 console.log(fails ? ('\n*** ПРОВАЛЕНО ТЕСТОВ: ' + fails) : '\n*** ВСЕ ТЕСТЫ ПРОШЛИ');
 process.exit(fails ? 1 : 0);

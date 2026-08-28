@@ -1,5 +1,5 @@
 /* sw.js — офлайн-кэш */
-const CACHE = 'fithelper-v14';
+const CACHE = 'fithelper-v15';
 const ASSETS = [
   './', './index.html', './css/style.css',
   './js/app.js', './js/store.js', './js/engine.js', './js/gemini.js', './js/ui.js', './js/recipes.js', './js/prices.js', './js/quick.js', './js/remind.js', './js/lifts.js', './js/body.js', './prices.json',
@@ -19,8 +19,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  // запросы к Gemini никогда не кэшируем
-  if (url.hostname.includes('googleapis.com')) return;
+  // Чужие домены не трогаем вообще. Раньше на неудачном запросе к базе продуктов
+  // воркер отдавал index.html со статусом 200 — и парсер JSON падал на HTML.
+  if (url.origin !== location.origin) return;
   if (e.request.method !== 'GET') return;
 
   e.respondWith(

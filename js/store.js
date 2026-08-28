@@ -56,9 +56,8 @@ const DEFAULTS = {
   schedule: {}, // {date: [{id,time,title,desc,kind,minutes}]}
   notes: [],    // {date, text}
   customRecipes: [],   // блюда, собранные AI под предпочтения
-  lifts: {},           // журнал силовых
-  measures: [],        // замеры сантиметром
-  photos: [],          // фото прогресса
+  lifts: {},           // {date: {program, sets: {exId: [{kg,reps}]}, note}} — журнал силовых
+  measures: [],        // {date, waist, chest, hips, neck, note} — замеры сантиметром
   favorites: [],       // названия блюд в нижнем регистре, закреплённые вверху быстрой записи
   // Цены из сфотографированных листовок: {store, date, until, items:[{key,product,price,pack,per,base,old}]}
   flyers: [],
@@ -71,15 +70,28 @@ const DEFAULTS = {
   log: []       // системный лог решений движка
 };
 
+function clone(v){
+  if (Array.isArray(v)) return v.map(clone);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = clone(v[k]);
+    return o;
+  }
+  return v;
+}
+
 function deepMerge(base, over){
-  const out = Array.isArray(base) ? base.slice() : {...base};
+  // Копия должна быть ГЛУБОКОЙ. Раньше здесь было {...base}, то есть массивы и словари
+  // копировались по ссылке — и state весь сеанс мутировал сам DEFAULTS. Из-за этого
+  // «Стереть всё» ничего не стирало, а импорт бэкапа подмешивал данные текущей сессии.
+  const out = clone(base);
   if (!over || typeof over !== 'object') return out;
   for (const k of Object.keys(over)){
     const b = base ? base[k] : undefined, o = over[k];
     if (o && typeof o === 'object' && !Array.isArray(o) && b && typeof b === 'object' && !Array.isArray(b)){
       out[k] = deepMerge(b, o);
     } else if (o !== undefined){
-      out[k] = o;
+      out[k] = clone(o);
     }
   }
   return out;
@@ -106,12 +118,50 @@ function load(){
   }
 }
 
-function save(){
+let saveError = null;
+
+/* ---------- фото прогресса ----------
+   Держим в отдельном ключе. Фото в base64 весят сотни килобайт, и если они лежат
+   в одном ключе с дневником, переполнение квоты убивает вообще все записи.
+   Здесь же — вытеснение: при переполнении выбрасываем самое старое фото,
+   но НИКОГДА первое: это точка отсчёта, ради неё всё и снимается. */
+const PKEY = KEY + '.photos';
+let photos = (function(){
+  try{
+    const raw = localStorage.getItem(PKEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(_){ return []; }
+})();
+
+function savePhotos(){
+  for (let attempt = 0; attempt < 12; attempt++){
+    try{
+      localStorage.setItem(PKEY, JSON.stringify(photos));
+      saveError = null;
+      return true;
+    }catch(e){
+      if (photos.length <= 1){
+        saveError = 'Фото не помещается в память браузера. Сними покороче или удали старые.';
+        console.error('photos save failed', e);
+        return false;
+      }
+      // выбрасываем предпоследнее: самое старое из «недавних», первое фото бережём
+      photos.splice(photos.length - 2, 1);
+      saveError = 'Памяти не хватило — удалил одно из старых фото, чтобы сохранить новое.';
+    }
+  }
+  return false;
+}
+
+/* force=true — осознанное действие пользователя (сброс, импорт бэкапа).
+   Только оно имеет право пройти мимо предохранителя ниже. */
+function save(force){
   try{
     // Предохранитель: никогда не затираем настроенный профиль пустым состоянием.
     // Такое возможно, если модуль стартовал до того, как данные оказались в хранилище
     // (например, ссылка с шагами открылась в уже висящей вкладке).
-    if (!state.profile.onboarded){
+    if (!force && !state.profile.onboarded){
       const raw = localStorage.getItem(KEY);
       if (raw){
         let prev = null;
@@ -123,8 +173,18 @@ function save(){
       }
     }
     localStorage.setItem(KEY, JSON.stringify(state));
+    saveError = null;
+    return true;
   }
-  catch(e){ console.error('store save failed', e); }
+  catch(e){
+    // Переполнение квоты — это молчаливая потеря всего дня. Раньше ошибка глоталась,
+    // и человек продолжал записывать еду в память, а на перезагрузке всё исчезало.
+    console.error('store save failed', e);
+    saveError = (e && e.name === 'QuotaExceededError')
+      ? 'Память браузера переполнена — записи не сохраняются. Удали пару фото прогресса в разделе «Вес».'
+      : 'Не удалось сохранить данные: ' + ((e && e.message) || 'неизвестная ошибка');
+    return false;
+  }
 }
 
 /* ---------- даты ---------- */
@@ -278,7 +338,8 @@ export const S = {
     if (!d || !d.sets[exId]) return;
     d.sets[exId].splice(index, 1);
     if (!d.sets[exId].length) delete d.sets[exId];
-    if (!Object.keys(d.sets).length) delete state.lifts[date];
+    // день удаляем только если и заметки нет: иначе стирался текст, написанный руками
+    if (!Object.keys(d.sets).length && !d.note) delete state.lifts[date];
     save();
   },
   setLiftNote(date, note){
@@ -304,18 +365,20 @@ export const S = {
     save();
   },
 
-  /* фото прогресса */
-  get photos(){ return state.photos || (state.photos = []); },
+  /* фото прогресса — в отдельном ключе хранилища */
+  get photos(){ return photos; },
   addPhoto(p){
-    const list = state.photos || (state.photos = []);
-    list.unshift(Object.assign({ id: 'ph' + Date.now(), date: todayISO() }, p));
-    state.photos = list.slice(0, 12);
-    save();
+    photos.unshift(Object.assign({ id: 'ph' + Date.now(), date: todayISO() }, p));
+    return savePhotos();
   },
   delPhoto(id){
-    state.photos = (state.photos || []).filter(function(x){ return x.id !== id; });
-    save();
+    photos = photos.filter(function(x){ return x.id !== id; });
+    savePhotos();
   },
+
+  /* последняя ошибка сохранения — чтобы интерфейс мог о ней сказать вслух */
+  get saveError(){ return saveError; },
+  clearSaveError(){ saveError = null; },
 
   /* избранные блюда для записи в один тап */
   get favorites(){ return state.favorites || (state.favorites = []); },
@@ -362,11 +425,18 @@ export const S = {
   },
 
   /* сервис */
-  export(){ return JSON.stringify(state, null, 2); },
+  export(){ return JSON.stringify(Object.assign({}, state, { photos: photos }), null, 2); },
   import(json){
     const obj = typeof json === 'string' ? JSON.parse(json) : json;
-    state = deepMerge(DEFAULTS, obj); save();
+    if (Array.isArray(obj.photos)){ photos = obj.photos; savePhotos(); }
+    const rest = Object.assign({}, obj); delete rest.photos;
+    state = deepMerge(DEFAULTS, rest);
+    return save(true);
   },
-  reset(){ state = deepMerge(DEFAULTS, {}); save(); },
+  reset(){
+    state = deepMerge(DEFAULTS, {});
+    photos = []; savePhotos();
+    return save(true);
+  },
   save
 };

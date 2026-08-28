@@ -327,7 +327,7 @@ export async function parseSchedule(text){
 }
 
 /* ---------- утилита: файл → base64 ---------- */
-export function fileToBase64(file, maxSide = 768){
+export function fileToBase64(file, maxSide = 768, quality = 0.78){
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -339,7 +339,7 @@ export function fileToBase64(file, maxSide = 768){
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
       c.getContext('2d').drawImage(img, 0, 0, w, h);
-      const dataUrl = c.toDataURL('image/jpeg', 0.78);
+      const dataUrl = c.toDataURL('image/jpeg', quality);
       resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg', dataUrl });
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось прочитать изображение.')); };

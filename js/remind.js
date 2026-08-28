@@ -26,7 +26,19 @@ function pad(n){ return String(n).padStart(2, '0'); }
    так событие встанет ровно на то время, которое показано в приложении. */
 function stamp(dateISO, hhmm){
   const [h, m] = String(hhmm || '00:00').split(':').map(Number);
-  return dateISO.replace(/-/g, '') + 'T' + pad(h || 0) + pad(m || 0) + '00';
+  // время может прийти «за сутки» (25:10) — переносим на следующую дату,
+  // календарь не примет час больше 23
+  const total = (h || 0) * 60 + (m || 0);
+  const shift = Math.floor(total / 1440);
+  const rest = ((total % 1440) + 1440) % 1440;
+  const day = shift ? addDays(dateISO, shift) : dateISO;
+  return day.replace(/-/g, '') + 'T' + pad(Math.floor(rest / 60)) + pad(rest % 60) + '00';
+}
+
+/* Сколько суток выгружаем. Клампим в одном месте, чтобы events() и summary()
+   считали по одному и тому же числу дней. */
+function dayCount(days){
+  return Math.max(1, Math.min(31, Math.round(Number(days) || 0) || 7));
 }
 
 function esc(s){
@@ -59,18 +71,22 @@ function fold(line){
 function Buffer_len(s){ return new TextEncoder().encode(s).length; }
 
 export function events(days, level){
-  const n = Math.max(1, Math.min(31, days || 7));
+  const n = dayCount(days);
   const lv = level || 1;
   const out = [];
   for (let i = 0; i < n; i++){
     const d = addDays(todayISO(), i);
     const slots = E.buildDay(d);
+    // движок отдаёт время по модулю суток: на вечерней неделе отбой '00:30'
+    // — это уже следующее утро. Всё, что раньше подъёма, относится к завтра.
+    const wakeM = E.toMin(E.dayShape(d).wake);
     slots.forEach(function(sl){
       const rule = KINDS[sl.kind];
       if (!rule || rule.level > lv) return;
+      const date = E.toMin(sl.time) < wakeM ? addDays(d, 1) : d;
       out.push({
         uid: 'fh-' + d + '-' + sl.id,
-        date: d,
+        date: date,
         time: sl.time,
         minutes: sl.minutes || (sl.kind === 'meal' ? 20 : 10),
         title: sl.title,
@@ -101,7 +117,9 @@ export function ics(days, level){
     L.push('DTEND:' + stamp(e.date, end));
     L.push(fold('SUMMARY:' + esc(e.title)));
     if (e.desc) L.push(fold('DESCRIPTION:' + esc(e.desc)));
-    if (e.alarm >= 0){
+    // 0 — это «без будильника» (подъём, взвешивание, кухня закрыта):
+    // TRIGGER:-PT0M звонил бы ровно в момент события и был бы шумом
+    if (e.alarm > 0){
       L.push('BEGIN:VALARM', 'ACTION:DISPLAY',
         fold('DESCRIPTION:' + esc(e.title)),
         'TRIGGER:-PT' + (e.alarm || 0) + 'M', 'END:VALARM');
@@ -127,12 +145,13 @@ export function download(days, level){
 
 /* Сколько напоминаний получится — чтобы показать до выгрузки */
 export function summary(days, level){
-  const evs = events(days, level);
+  const n = dayCount(days);
+  const evs = events(n, level);
   const names = [];
   evs.forEach(function(e){ if (names.indexOf(e.title) < 0) names.push(e.title); });
   return {
-    count: evs.length, days: days,
-    perDay: Math.round(evs.length / days),
+    count: evs.length, days: n,
+    perDay: Math.round(evs.length / n),
     names: names.slice(0, 8)
   };
 }
