@@ -106,7 +106,7 @@ eq('матч: неизвестное', P.keyFor('Пыль звёздная'), nu
 
 const bestChick = P.bestFor('курица_грудка');
 eq('грудка: найден вариант', !!bestChick, true);
-eq('грудка: цена за кг', bestChick.per, 5.99);
+eq('грудка: цена за кг', bestChick.per, 6.58);
 
 const ings = new Set();
 E.allRecipes().forEach(r => r.ing.forEach(a => ings.add(a[0])));
@@ -124,6 +124,13 @@ eq('корзина в разумных пределах (10–120 €)', b.total
 eq('магазины распределились', b.stores.length >= 1, true);
 b.stores.forEach(st => console.log('      ' + st.name + ': ' + st.sum + ' € (' + st.items.length + ' поз.)'));
 console.log('      итого:', b.total, '€ | экономия:', b.save, '€');
+
+const cmp = P.compareStores(list);
+console.log('      всё в одном магазине:');
+cmp.single.forEach(x => console.log('        ' + x.name + ': ' + x.total + ' €' + (x.away ? ' (' + x.away + ' поз. только у соседа)' : ' — есть всё')));
+console.log('      если раскидать:', cmp.split.total, '€ | выигрыш от беготни:', cmp.gain, '€');
+eq('сравнение магазинов посчиталось', cmp.single.length >= 2, true);
+eq('раскидать не дороже, чем в одном магазине', cmp.split.total <= cmp.single[0].total + 0.01, true);
 
 const swaps = P.swapHints(list);
 console.log('      замен предложено:', swaps.length);

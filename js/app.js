@@ -724,16 +724,28 @@ function viewRation(){
 /* ---------- список покупок с ценами ---------- */
 const MONEY = v => (Math.round(v*100)/100).toFixed(2).replace('.', ',') + ' €';
 const DMY = iso => { const p = String(iso||'').split('-'); return p.length===3 ? (p[2]+'.'+p[1]) : ''; };
+let shopMode = 'best';
 
-function priceLine(it){
-  const disc = it.old && it.old > it.price;
-  return '<span class="tiny dim">' + esc(it.product) +
-    (it.pack ? ' · ' + esc(it.pack) : '') +
-    ' · ' + MONEY(it.per) + '/' + esc(it.base) +
-    (disc ? ' <span style="color:var(--ok)">−' + Math.round((1 - it.price/it.old)*100) + '%</span>' : '') +
-    (it.until ? ' <span style="color:var(--warn)">до ' + DMY(it.until) + '</span>' : '') +
-    (it.fromFlyer ? ' <span class="dim">(с листовки)</span>' : '') +
-    '</span>';
+function itemRow(r, withStore){
+  const it = r.best;
+  if (!it){
+    return '<div class="shop-item gone"><div class="body">' +
+      '<div class="ttl">' + esc(r.name) + ' <span class="qty">' + num(r.qty, r.unit==='кг'?1:0) + ' ' + esc(r.unit) + '</span></div>' +
+      '<div class="sub">цены пока нет</div>' +
+      '</div></div>';
+  }
+  const sale = it.old && it.old > it.price;
+  return '<div class="shop-item"><div class="body">' +
+    '<div class="ttl">' + esc(r.name) + ' <span class="qty">' + num(r.qty, r.unit==='кг'?1:0) + ' ' + esc(r.unit) + '</span></div>' +
+    '<div class="sub">' +
+      (withStore ? esc(P.storeName(it.store)) + ' · ' : '') + esc(it.product) + ' · ' + MONEY(it.per) + '/' + esc(it.base) +
+      (r.away ? ' <span class="pill flyer">только в ' + esc(P.storeName(it.store)) + '</span>' : '') +
+      (sale ? ' <span class="pill sale">−' + Math.round((1 - it.price/it.old)*100) + '%</span>' : '') +
+      (it.until ? ' <span class="pill till">до ' + DMY(it.until) + '</span>' : '') +
+      (it.fromFlyer ? ' <span class="pill flyer">с листовки</span>' : '') +
+    '</div></div>' +
+    '<div class="pr">' + MONEY(r.cost) + '</div>' +
+  '</div>';
 }
 
 function pickDish(dow, slot){
@@ -1438,57 +1450,91 @@ async function renderShopping(shop){
   const box = $('#r-shop');
   if (!box) return;
   await P.loadPrices();
-  const b = P.basket(shop);
-  const swaps = P.swapHints(shop);
+
+  const cmp = P.compareStores(shop);
+  const modes = [{ id:'best', name:'Где дешевле', total: cmp.split.total, away: 0 }]
+    .concat(cmp.single.map(x => ({ id:x.store, name:'Всё в ' + x.name, total:x.total, away:x.away })));
+  if (!modes.some(m => m.id === shopMode)) shopMode = 'best';
+
+  const cheapest = modes.slice().sort((a,b) => a.total - b.total)[0] || modes[0];
+  const b = shopMode === 'best' ? cmp.split : P.basket(shop, shopMode);
   const soon = P.endingSoon(5);
+  const swaps = P.swapHints(shop);
   const upd = (P.db() || {}).updated;
+  const lidlOnline = (((P.db()||{}).stores||{}).lidl||{}).online;
 
-  const row = r =>
-    '<li style="align-items:flex-start">' +
-      '<div class="grow">' +
-        '<div class="small">' + esc(r.name) + ' — <b>' + num(r.qty, r.unit==='кг'?1:0) + ' ' + esc(r.unit) + '</b></div>' +
-        (r.found ? '<div>' + priceLine(r.best) + '</div>'
-                 : '<div class="tiny dim">цену пока не нашёл — глянь на месте</div>') +
-      '</div>' +
-      (r.cost != null ? '<b class="small" style="white-space:nowrap">' + MONEY(r.cost) + '</b>' : '') +
-    '</li>';
-
-  const missing = b.rows.filter(r => !r.found);
+  let cap;
+  if (shopMode === 'best'){
+    cap = (cmp.gain > 0.5 && cmp.single.length)
+      ? 'На ' + MONEY(cmp.gain) + ' дешевле, чем брать всё в одном магазине'
+      : 'Самое дешёвое по всем магазинам';
+  } else {
+    const d = Math.round((b.total - cmp.split.total) * 100) / 100;
+    cap = d > 0.5 ? 'На ' + MONEY(d) + ' дороже, зато один магазин'
+                  : 'Один магазин, и переплаты почти нет';
+  }
+  const duel = cmp.single.length >= 2
+    ? (Math.abs(cmp.single[0].total - cmp.single[1].total) < 1
+        ? 'Вся неделя выходит почти одинаково: ' + cmp.single.map(x => x.name + ' ' + MONEY(x.total)).join(' и ') +
+          '. Разница набегает на отдельных продуктах, поэтому «где дешевле» и раскидывает корзину.'
+        : cmp.single[0].name + ' дешевле: ' + MONEY(cmp.single[0].total) + ' против ' +
+          MONEY(cmp.single[1].total) + ' в ' + cmp.single[1].name + '.')
+    : '';
 
   box.innerHTML =
-    '<div class="row between mb">' +
-      '<div><div class="tiny dim">Еда на неделю</div><div style="font-size:24px;font-weight:700">' + MONEY(b.total) + '</div></div>' +
-      (b.save > 0.5 ? '<div style="text-align:right"><div class="tiny dim">сэкономил на выборе</div>' +
-        '<div style="font-size:18px;font-weight:700;color:var(--ok)">' + MONEY(b.save) + '</div></div>' : '') +
+    '<div class="shop-tabs" id="r-modes">' +
+      modes.map(m => '<button class="shop-tab' + (m.id===shopMode?' on':'') + (m.id===cheapest.id?' best':'') + '" data-mode="' + esc(m.id) + '">' +
+        '<b>' + MONEY(m.total) + '</b><span>' + esc(m.name) + '</span></button>').join('') +
     '</div>' +
 
+    '<div class="shop-hero"><div class="sum">' + MONEY(b.total) + '</div>' +
+      '<div class="cap">' + esc(cap) + '</div></div>' +
+
+    (duel ? '<div class="note-box"><div class="t">Maxima или Rimi</div><div class="d">' + esc(duel) + '</div></div>' : '') +
+
+    (b.away ? '<div class="tiny dim center mb">' + b.away + ' ' + plural(b.away,'позицию','позиции','позиций') +
+      ' в этом магазине не продают — посчитал по цене соседнего, чтобы суммы можно было сравнивать.</div>' : '') +
+
     (soon.length ?
-      '<div class="verdict warn" style="margin-bottom:10px"><div class="t">Успей: акции кончаются</div><div class="d">' +
-        soon.slice(0,4).map(d => esc(d.product) + ' — ' + MONEY(d.price) + ', ' + esc(P.storeName(d.store)) + ', до ' + DMY(d.until)).join('<br>') +
+      '<div class="note-box warn"><div class="t">Успей до ' + DMY(soon[0].until) + '</div><div class="d">' +
+        soon.slice(0,4).map(d => esc(d.product) + ' — ' + MONEY(d.price) + ' в ' + esc(P.storeName(d.store))).join('<br>') +
       '</div></div>' : '') +
 
-    b.stores.map(st =>
-      '<div class="mt"><div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)">' +
-        '<b>' + esc(st.name) + '</b><b>' + MONEY(st.sum) + '</b></div>' +
-      '<ul class="list" style="margin:0">' + st.items.map(row).join('') + '</ul></div>').join('') +
-
-    (missing.length ? '<div class="mt"><div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)">' +
-      '<b class="dim">Без цены</b></div><ul class="list" style="margin:0">' + missing.map(row).join('') + '</ul></div>' : '') +
+    (shopMode === 'best'
+      ? b.stores.map((st, i) =>
+          '<div class="shop-store"><span class="step">' + (i+1) + '</span>' +
+          '<span class="n">' + esc(st.name) + '</span>' +
+          '<span class="dim small">' + st.items.length + ' ' + plural(st.items.length,'позиция','позиции','позиций') + '</span>' +
+          '<span class="sum">' + MONEY(st.sum) + '</span></div>' +
+          st.items.map(r => itemRow(r, false)).join('')).join('') +
+        (b.rows.filter(r=>!r.found).length
+          ? '<div class="shop-store"><span class="n dim">Без цены</span></div>' +
+            b.rows.filter(r=>!r.found).map(r => itemRow(r, false)).join('')
+          : '')
+      : '<div class="shop-store"><span class="step">✓</span><span class="n">' + esc(P.storeName(shopMode)) + '</span>' +
+        '<span class="sum">' + MONEY(b.total) + '</span></div>' +
+        b.rows.map(r => itemRow(r, false)).join('')) +
 
     (swaps.length ?
-      '<div class="verdict ok mt"><div class="t">Замени — станет дешевле</div><div class="d">' +
-        swaps.slice(0,3).map(s => esc(s.name) + ' → ' + esc(s.to.product) + ' (' + esc(P.storeName(s.to.store)) + '), минус ' + MONEY(s.save) +
-          (s.why ? '. ' + esc(s.why) : '')).join('<br>') +
+      '<div class="note-box ok"><div class="t">Замени — станет дешевле</div><div class="d">' +
+        swaps.slice(0,3).map(s => esc(s.name) + ' → ' + esc(s.to.product) + ', минус ' + MONEY(s.save) +
+          (s.why ? '. ' + esc(s.why) : '')).join('<br><br>') +
       '</div></div>' : '') +
 
     '<button class="btn block mt" id="r-flyer">Сфотографировать листовку</button>' +
-    '<div class="tiny dim center mt">Maxima и Rimi обновляются сами' + (upd ? ' (последний раз ' + DMY(upd) + ')' : '') +
-      '. Lidl автоматически не читается — сними страницу листовки, ИИ впишет цены сам.' +
-      (S.flyers.length ? ' Твоих листовок в базе: ' + S.flyers.length + '.' : '') +
-    '</div>' +
+    (lidlOnline === false && !S.flyers.some(f => f.store === 'lidl')
+      ? '<div class="note-box"><div class="t">Lidl пока не в сравнении</div><div class="d">Lidl единственный из трёх не выкладывает цены в интернет — только бумажные листовки. Сними листовку на камеру, ИИ впишет цены, и Lidl встанет в сравнение наравне с Maxima и Rimi.</div></div>'
+      : '') +
+    '<div class="tiny dim center mt">Maxima и Rimi обновляются сами' + (upd ? ', последний раз ' + DMY(upd) : '') + '.' +
+      (S.flyers.length ? ' Твоих листовок: ' + S.flyers.length + '.' : '') + '</div>' +
     (S.flyers.length ? '<div class="chips mt">' + S.flyers.map(f =>
       '<button class="chip" data-flyer="' + esc(f.id) + '">' + esc(P.storeName(f.store)) + ' ' + DMY(f.added) + ' ✕</button>').join('') + '</div>' : '');
 
+  $('#r-modes').onclick = e => {
+    const t = e.target.closest('.shop-tab'); if (!t) return;
+    shopMode = t.dataset.mode;
+    renderShopping(shop);
+  };
   $('#r-flyer').onclick = openFlyer;
   $$('[data-flyer]', box).forEach(el => el.onclick = () => {
     S.removeFlyer(el.dataset.flyer);

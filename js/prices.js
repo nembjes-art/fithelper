@@ -146,12 +146,18 @@ function toBase(qty, unit, base){
   return qty;
 }
 
-/* list — результат engine.shoppingList(): [{name, qty, unit}] */
-export function basket(list){
+/* list — результат engine.shoppingList(): [{name, qty, unit}]
+   mode: 'best' — самое дешёвое где угодно; 'maxima'/'lidl'/'rimi' — всё в одном магазине */
+export function basket(list, mode){
+  const one = mode && mode !== 'best' ? mode : null;
   const rows = (list || []).map(function(row){
     const key = keyFor(row.name);
-    const opts = optionsFor(key);
-    const best = opts.length ? opts[0] : null;
+    const all = optionsFor(key);
+    const opts = one ? all.filter(function(i){ return i.store === one; }) : all;
+    // в режиме «всё в одном магазине»: если товара тут нет, считаем его по цене
+    // из другого магазина и помечаем — иначе суммы магазинов нельзя сравнивать честно
+    const away = one && !opts.length && all.length ? all[0] : null;
+    const best = opts.length ? opts[0] : away;
     const need = best ? toBase(row.qty, row.unit, best.base) : 0;
     const cost = best ? Math.round(need * best.per * 100) / 100 : null;
     // экономия против самого дорогого варианта той же категории
@@ -164,13 +170,14 @@ export function basket(list){
     return {
       name: row.name, qty: row.qty, unit: row.unit,
       key: key, best: best, alts: opts.slice(1, 3), cost: cost, save: save,
-      found: !!best
+      found: !!best, away: !!away
     };
   });
 
   const byStore = {};
-  let total = 0, missing = 0;
+  let total = 0, missing = 0, away = 0;
   rows.forEach(function(r){
+    if (r.away) away++;
     if (!r.found || r.cost == null){ missing++; return; }
     const st = r.best.store;
     if (!byStore[st]) byStore[st] = { store: st, name: storeName(st), sum: 0, items: [] };
@@ -185,7 +192,39 @@ export function basket(list){
 
   const totalSave = Math.round(rows.reduce(function(a, r){ return a + (r.save || 0); }, 0) * 100) / 100;
 
-  return { rows: rows, stores: stores, total: total, missing: missing, save: totalSave };
+  return { rows: rows, stores: stores, total: total, missing: missing, away: away, save: totalSave, mode: mode || 'best' };
+}
+
+/* Сколько выйдет, если купить ВСЁ в одном магазине — и сколько, если раскидать.
+   Именно это отвечает на вопрос «а точно ли Rimi дешевле Maxima». */
+export function compareStores(list){
+  const ids = Object.keys((DB && DB.stores) || {})
+    .concat(Object.keys((S.flyers || []).reduce(function(a, f){ a[f.store] = 1; return a; }, {})))
+    .filter(function(v, i, arr){ return arr.indexOf(v) === i; });
+
+  const single = ids.map(function(id){
+    const b = basket(list, id);
+    return {
+      store: id, name: storeName(id), total: b.total,
+      missing: b.missing, away: b.away, rows: b.rows,
+      complete: b.away === 0 && b.missing === 0
+    };
+  }).filter(function(x){
+      // режим «всё в одном магазине» показываем только если магазин реально
+      // закрывает большую часть корзины сам, а не заимствует цены у соседа
+      const own = x.rows.length - x.away;
+      return x.total > 0 && x.rows.length > 0 && own / x.rows.length >= 0.6;
+    })
+    .sort(function(a, b){ return a.total - b.total; });
+
+  const split = basket(list, 'best');
+  const cheapestSingle = single.length ? single[0] : null;
+  return {
+    single: single,
+    split: split,
+    // сколько экономит беготня по двум магазинам вместо одного
+    gain: cheapestSingle ? Math.round((cheapestSingle.total - split.total) * 100) / 100 : 0
+  };
 }
 
 /* Акции, которые скоро кончатся — чтобы успеть закупиться. */
