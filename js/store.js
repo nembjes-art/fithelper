@@ -58,6 +58,7 @@ const DEFAULTS = {
   customRecipes: [],   // блюда, собранные AI под предпочтения
   lifts: {},           // {date: {program, sets: {exId: [{kg,reps}]}, note}} — журнал силовых
   measures: [],        // {date, waist, chest, hips, neck, note} — замеры сантиметром
+  pantry: '',          // что человек в прошлый раз перечислил как «есть дома»
   favorites: [],       // названия блюд в нижнем регистре, закреплённые вверху быстрой записи
   // Цены из сфотографированных листовок: {store, date, until, items:[{key,product,price,pack,per,base,old}]}
   flyers: [],
@@ -379,6 +380,10 @@ export const S = {
   /* последняя ошибка сохранения — чтобы интерфейс мог о ней сказать вслух */
   get saveError(){ return saveError; },
   clearSaveError(){ saveError = null; },
+
+  /* что есть дома — чтобы не перепечатывать каждый раз */
+  get pantry(){ return state.pantry || ''; },
+  setPantry(t){ state.pantry = String(t || '').slice(0, 800); save(); },
 
   /* избранные блюда для записи в один тап */
   get favorites(){ return state.favorites || (state.favorites = []); },

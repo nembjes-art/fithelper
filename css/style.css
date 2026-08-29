@@ -330,3 +330,17 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:14px 0}
 .ph-grid figure{margin:0}
 .ph-grid img{width:100%;border-radius:var(--r-sm);display:block;background:var(--surface-2)}
 .ph-grid figcaption{font-size:12px;color:var(--muted);text-align:center;margin-top:5px}
+
+/* ---------- что приготовить из того, что есть ---------- */
+.dish{background:var(--surface-2);border-radius:var(--r-sm);padding:13px;margin-bottom:10px}
+.dish .top{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.dish .top b{font-size:16px;line-height:1.25}
+.dish .kc{margin-left:auto;font-size:17px;font-weight:700;white-space:nowrap}
+.dish .macros{display:flex;gap:12px;font-size:13px;color:var(--muted);margin-bottom:8px}
+.dish .macros b{color:var(--text)}
+.dish .why{font-size:13px;color:var(--ok);background:var(--ok-soft);padding:7px 9px;border-radius:var(--r-sm);margin-bottom:8px;line-height:1.4}
+.dish .why.tight{color:var(--warn);background:var(--warn-soft)}
+.dish .uses{font-size:12px;color:var(--dim);margin-bottom:8px;line-height:1.5}
+.dish .miss{color:var(--warn)}
+.dish .how{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px}
+.dish .btn-row{margin:0}

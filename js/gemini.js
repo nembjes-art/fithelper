@@ -519,3 +519,106 @@ export async function readPack(base64, mime){
     }
   };
 }
+
+/* ---------- что приготовить из того, что есть ---------- */
+const COOK_SCHEMA = {
+  type: 'object',
+  properties: {
+    ok: { type: 'boolean' },
+    note: { type: 'string' },
+    dishes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          uses: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                qty: { type: 'number' },
+                unit: { type: 'string', description: 'г | мл | шт' }
+              },
+              required: ['name','qty','unit']
+            }
+          },
+          missing: { type: 'array', items: { type: 'string' } },
+          grams: { type: 'number' },
+          kcal: { type: 'number' },
+          p: { type: 'number' }, f: { type: 'number' }, c: { type: 'number' },
+          cookMin: { type: 'number' },
+          how: { type: 'string' },
+          why: { type: 'string' },
+          slot: { type: 'string', description: 'breakfast | lunch | snack | dinner' }
+        },
+        required: ['name','uses','grams','kcal','p','f','c','cookMin','how']
+      }
+    }
+  },
+  required: ['ok','dishes']
+};
+
+const COOK_PROMPT = `Человек говорит, какие продукты у него есть дома. Твоя работа — предложить,
+что из этого приготовить прямо сейчас. Отвечаешь по-русски, на «ты», без воды.
+
+Правила:
+- Используй ТОЛЬКО перечисленные продукты. Из общего можно считать, что дома есть:
+  соль, перец, вода, немного растительного масла. Больше ничего не выдумывай.
+- Если блюдо получается отличным, но не хватает одного дешёвого продукта — можно предложить,
+  но обязательно перечисли его в missing. Двух и больше недостающих продуктов быть не должно.
+- Список запретов человека соблюдай строго: продукт из «не ем» не появляется ни в одном блюде.
+- Человек на дефиците калорий и худеет. Поэтому:
+  главный приоритет — белок, второй — влезть в остаток калорий на день.
+  Блюдо на 40 г белка и 350 ккал лучше, чем на 15 г белка и 350 ккал.
+- Предложи от 2 до 4 блюд, самое подходящее первым.
+- uses — что именно из его продуктов идёт в блюдо, с количеством: название, сколько и в чём
+  (г, мл или шт). Это должны быть реальные веса на одну порцию, а не «по вкусу».
+- grams — вес готовой порции. kcal, p, f, c — на эту порцию, честно, не занижай.
+  Помни: белок 4 ккал/г, жир 9 ккал/г, углеводы 4 ккал/г — сумма должна сходиться с kcal.
+- cookMin — сколько реально уйдёт минут вместе с нарезкой.
+- how — как готовить, 2–4 коротких предложения, по шагам. Без художественных описаний.
+- why — одна фраза: почему именно это блюдо ему сейчас подходит.
+  Опирайся на остаток калорий и белка, который тебе дали.
+- slot — к какому приёму пищи это ближе.
+
+Если из перечисленного нормальной еды не собрать — верни ok:false и в note скажи по-русски,
+чего конкретно не хватает, чтобы получилось хоть что-то белковое.`;
+
+export async function cookFrom(have, ctx, base64, mime){
+  const parts = [{
+    text: 'Что есть дома: ' + (have || '(не написал, смотри фото)') +
+      '\n\nСостояние дня и ограничения:\n' + JSON.stringify(ctx, null, 1)
+  }];
+  if (base64) parts.push({ inline_data: { mime_type: mime || 'image/jpeg', data: base64 } });
+  const r = await call(parts, COOK_SCHEMA, COOK_PROMPT);
+  const dishes = (r.dishes || []).map(function(d){
+    const p = Math.max(0, Math.round((Number(d.p) || 0) * 10) / 10);
+    const f = Math.max(0, Math.round((Number(d.f) || 0) * 10) / 10);
+    const c = Math.max(0, Math.round((Number(d.c) || 0) * 10) / 10);
+    let kcal = Math.round(Number(d.kcal) || 0);
+    const fromMacros = Math.round(p * 4 + f * 9 + c * 4);
+    // Модель регулярно ошибается в калориях. Если расхождение с БЖУ больше 15%,
+    // верим белкам-жирам-углеводам: их она считает надёжнее.
+    if (fromMacros > 0 && (!kcal || Math.abs(kcal - fromMacros) / fromMacros > 0.15)) kcal = fromMacros;
+    return {
+      name: String(d.name || 'Блюдо').trim(),
+      uses: (d.uses || []).filter(function(x){ return x && x.name; }).map(function(x){
+        return {
+          name: String(x.name).trim(),
+          qty: Math.max(1, Math.round(Number(x.qty) || 0)) || 1,
+          unit: ['г','мл','шт'].indexOf(x.unit) >= 0 ? x.unit : 'г'
+        };
+      }),
+      missing: (d.missing || []).map(String).filter(Boolean),
+      grams: Math.round(Number(d.grams) || 0),
+      kcal: kcal, p: p, f: f, c: c,
+      cookMin: Math.max(1, Math.round(Number(d.cookMin) || 15)),
+      how: String(d.how || '').trim(),
+      why: String(d.why || '').trim(),
+      slot: ['breakfast','lunch','snack','dinner'].indexOf(d.slot) >= 0 ? d.slot : 'lunch'
+    };
+  }).filter(function(d){ return d.kcal > 0 && d.name; });
+  return { ok: r.ok !== false && dishes.length > 0, note: r.note || '', dishes: dishes };
+}

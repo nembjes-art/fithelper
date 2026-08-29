@@ -172,6 +172,7 @@ function viewToday(){
 
     '<div class="btn-row mt">' +
       '<button class="btn ok" id="t-what">Что съесть?</button>' +
+      '<button class="btn" id="t-cook">Из чего есть</button>' +
       '<button class="btn" id="t-can">Можно ли?</button>' +
     '</div></div>' +
 
@@ -237,6 +238,7 @@ function viewToday(){
   $('#t-photo').onclick = openPhoto;
   $('#t-manual').onclick = openManual;
   if ($('#t-lift')) $('#t-lift').onclick = () => go('lift');
+  if ($('#t-cook')) $('#t-cook').onclick = openCookFrom;
   $('#t-what').onclick = openSuggest;
   $('#t-can').onclick = openJudge;
   $('#t-steps-save').onclick = () => {
@@ -523,6 +525,7 @@ function viewFood(){
   main.innerHTML =
   '<div class="view">' +
     '<button class="btn ok block mb" id="f-ration">Рацион на неделю и список покупок</button>' +
+    '<button class="btn ok block mb" id="f-cook">Что приготовить из того, что есть</button>' +
     '<div class="btn-row mb">' +
       '<button class="btn primary" id="f-photo">Фото еды</button>' +
       '<button class="btn" id="f-pack">Упаковка</button>' +
@@ -548,6 +551,7 @@ function viewFood(){
 
   $('#f-ration').onclick = () => go('ration');
   $('#f-photo').onclick = openPhoto;
+  $('#f-cook').onclick = openCookFrom;
   $('#f-pack').onclick = openPack;
   $('#f-manual').onclick = openManual;
   bindQuick();
@@ -2062,4 +2066,135 @@ function openMeasure(){
         close(); render(); toast('Замеры записаны');
       };
     });
+}
+
+/* ---------- что приготовить из того, что есть ---------- */
+const PANTRY_CHIPS = [
+  'яйца','творог','курица','фарш','рыба','сыр','йогурт','молоко',
+  'овсянка','рис','гречка','макароны','картошка','хлеб',
+  'помидоры','огурцы','капуста','морковь','лук','перец','кабачок','зелень',
+  'фасоль консерв.','тунец консерв.','замороженные овощи','ягоды','яблоки','бананы','орехи'
+];
+
+function openCookFrom(){
+  const { el, close } = sheet('Что приготовить из того, что есть',
+    '<div class="tiny muted mb">Напиши, что лежит в холодильнике — хоть через запятую, хоть как попало. Подберу варианты под остаток калорий и белка на сегодня, с граммовкой и временем готовки.</div>' +
+    '<label class="f"><span>Что есть дома</span>' +
+      '<textarea id="ck-have" placeholder="яйца, творог, помидоры, рис, куриная грудка">' + esc(S.pantry) + '</textarea></label>' +
+    '<div class="tiny dim mb">Нажимай, чтобы добавить быстро:</div>' +
+    '<div class="chips mb" id="ck-chips">' +
+      PANTRY_CHIPS.map(t => '<button class="chip" data-add="' + esc(t) + '">' + esc(t) + '</button>').join('') +
+    '</div>' +
+    '<input type="file" accept="image/*" capture="environment" id="ck-file" style="display:none">' +
+    '<div class="btn-row">' +
+      '<button class="btn primary" id="ck-go">Подобрать</button>' +
+      '<button class="btn" id="ck-photo">Снять холодильник</button>' +
+    '</div>' +
+    '<div id="ck-out" class="mt"></div>');
+
+  const ta = $('#ck-have', el);
+  $('#ck-chips', el).onclick = e => {
+    const b = e.target.closest('[data-add]'); if (!b) return;
+    const cur = ta.value.trim();
+    const t = b.dataset.add;
+    if (cur.toLowerCase().indexOf(t.toLowerCase()) >= 0) return;
+    ta.value = cur ? cur + ', ' + t : t;
+    ta.scrollTop = ta.scrollHeight;
+  };
+
+  const run = async (img) => {
+    const have = ta.value.trim();
+    if (!have && !img) return toast('Напиши, что есть, или сними холодильник');
+    S.setPantry(have);
+    const btn = $('#ck-go', el);
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Думаю…';
+    $('#ck-out', el).innerHTML = '';
+    try{
+      const tg = E.targets();
+      const t = E.dayTotals(todayISO());
+      const f = S.settings.food || {};
+      const r = await G.cookFrom(have, {
+        осталось_ккал_на_сегодня: Math.max(0, tg.kcal - t.kcal),
+        осталось_белка_г: Math.max(0, tg.protein - Math.round(t.p)),
+        уже_съедено_ккал: t.kcal,
+        дневной_лимит_ккал: tg.kcal,
+        не_ем: [f.avoid, (f.tags || []).join(', ')].filter(Boolean).join('; ') || 'нет',
+        люблю: f.like || 'нет особых пожеланий',
+        цель: 'снижение веса, беречь мышцы'
+      }, img ? img.base64 : null, img ? img.mime : null);
+
+      btn.disabled = false; btn.textContent = 'Подобрать ещё раз';
+      if (!r.ok || !r.dishes.length){
+        $('#ck-out', el).innerHTML = '<div class="note-box warn"><div class="t">Из этого не собрать</div>' +
+          '<div class="d">' + esc(r.note || 'Допиши, что ещё есть — особенно белковое.') + '</div></div>';
+        return;
+      }
+      renderDishes(r.dishes, el, close);
+    }catch(e){
+      btn.disabled = false; btn.textContent = 'Повторить';
+      toast(e.message);
+    }
+  };
+
+  $('#ck-go', el).onclick = () => run(null);
+  const file = $('#ck-file', el);
+  $('#ck-photo', el).onclick = () => file.click();
+  file.onchange = async () => {
+    const f0 = file.files[0]; if (!f0) return;
+    try { run(await G.fileToBase64(f0, 800, 0.7)); }
+    catch(e){ toast(e.message); }
+  };
+}
+
+let COOKED = [];
+
+function renderDishes(dishes, el, closeSheet){
+  COOKED = dishes;
+  const tg = E.targets();
+  const t = E.dayTotals(todayISO());
+  const left = tg.kcal - t.kcal;
+
+  $('#ck-out', el).innerHTML =
+    '<div class="tiny dim mb">Осталось на сегодня ' + num(left) + ' ккал и ' +
+      num(Math.max(0, tg.protein - Math.round(t.p))) + ' г белка.</div>' +
+    dishes.map((d, i) => {
+      const over = d.kcal > left;
+      return '<div class="dish">' +
+        '<div class="top"><b>' + esc(d.name) + '</b><span class="kc">' + num(d.kcal) + '</span></div>' +
+        '<div class="macros"><span>Б <b>' + num(d.p,1) + '</b></span>' +
+          '<span>Ж <b>' + num(d.f,1) + '</b></span>' +
+          '<span>У <b>' + num(d.c,1) + '</b></span>' +
+          '<span>' + num(d.grams) + ' г</span><span>' + num(d.cookMin) + ' мин</span></div>' +
+        (d.why ? '<div class="why' + (over ? ' tight' : '') + '">' +
+          (over ? 'Не влезает: перебор на ' + num(d.kcal - left) + ' ккал. Съешь половину или отработай ходьбой. ' : '') +
+          esc(d.why) + '</div>' : '') +
+        '<div class="uses">Пойдёт: ' + d.uses.map(u => esc(u.name) + ' ' + num(u.qty) + ' ' + esc(u.unit)).join(' · ') +
+          (d.missing.length ? '<br><span class="miss">Не хватает: ' + d.missing.map(esc).join(', ') + '</span>' : '') + '</div>' +
+        '<div class="how">' + esc(d.how) + '</div>' +
+        '<div class="btn-row">' +
+          '<button class="btn primary sm" data-eat="' + i + '">Съел это</button>' +
+          '<button class="btn sm" data-keep="' + i + '">В мои блюда</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+  $$('[data-eat]', el).forEach(b => b.onclick = () => {
+    const d = COOKED[b.dataset.eat];
+    Q.log({ name: d.name, grams: d.grams, kcal: d.kcal, p: d.p, f: d.f, c: d.c, src: 'cook' });
+    closeSheet(); render();
+    toast('Записано: ' + d.name + ' — ' + num(d.kcal) + ' ккал');
+  });
+
+  $$('[data-keep]', el).forEach(b => b.onclick = () => {
+    const d = COOKED[b.dataset.keep];
+    const adopted = E.adoptAiDishes([{
+      slot: d.slot, name: d.name, kcal: d.kcal, p: d.p, f: d.f, c: d.c,
+      cookMin: d.cookMin, batch: false, keeps: 2, how: d.how,
+      ing: d.uses.map(u => ({ name: u.name, qty: u.qty, unit: u.unit }))
+    }]);
+    if (!adopted.length) return toast('Не вышло сохранить это блюдо');
+    S.setCustomRecipes(S.customRecipes.concat(adopted));
+    toast(d.name + ' — теперь в твоей библиотеке блюд');
+    b.disabled = true; b.textContent = 'Сохранено';
+  });
 }
