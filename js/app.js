@@ -330,7 +330,7 @@ function openPhoto(){
         showConfirm(r.items, r.note, close, img.dataUrl);
       }catch(e){
         btn.disabled = false; btn.textContent = 'Повторить';
-        toast(e.message);
+        aiError(el, e);
       }
     };
     $('#p-run', el).onclick = run;
@@ -366,7 +366,7 @@ function openManual(){
       const r = await G.analyzeText(t);
       if (!r.items.length){ btn.disabled=false; btn.textContent='Повторить'; return toast(r.note || 'Не понял, что это'); }
       showConfirm(r.items, r.note, close, null);
-    }catch(e){ btn.disabled=false; btn.textContent='Повторить'; toast(e.message); }
+    }catch(e){ btn.disabled=false; btn.textContent='Повторить'; aiError(el, e); }
   };
 
   $('#m-save', el).onclick = () => {
@@ -463,7 +463,7 @@ function openSuggest(){
         close(); toast('Записано'); render();
       });
       btn.disabled = false; btn.textContent = 'Спросить ещё раз';
-    }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; toast(e.message); }
+    }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; aiError(el, e); }
   };
   $('#sg-go', el).onclick = run;
   run();
@@ -512,7 +512,7 @@ function openJudge(){
         close(); toast('Записано'); render();
       };
       btn.disabled = false; btn.textContent = 'Спросить про другое';
-    }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; toast(e.message); }
+    }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; aiError(el, e); }
   };
 }
 
@@ -1099,7 +1099,7 @@ function openVoice(){
       close();
       toast('Готово: ' + changed.join('; '));
       render();
-    }catch(e){ btn.disabled=false; btn.textContent='Повторить'; toast(e.message); }
+    }catch(e){ btn.disabled=false; btn.textContent='Повторить'; aiError(el, e); }
   };
 }
 
@@ -1317,6 +1317,7 @@ function viewSettings(){
           '<option value="'+esc(m)+'"'+(st.geminiModel===m?' selected':'')+'>'+esc(m)+'</option>').join('') +
       '</select></label>' +
       '<button class="btn block mb" id="st-models">Обновить список моделей</button>' +
+      '<div id="st-test-out"></div>' +
       '<div class="btn-row"><button class="btn" id="st-test">Проверить</button>' +
       '<button class="btn primary" id="st-savekey">Сохранить</button></div>' +
       '<div class="tiny dim mt">Ключ берётся на aistudio.google.com. Он не уходит никуда, кроме Google — приложение работает целиком у тебя в браузере.<br>' +
@@ -1406,8 +1407,21 @@ function viewSettings(){
   $('#st-test').onclick = async () => {
     S.setSettings({ geminiKey: $('#st-key').value.trim(), geminiModel: $('#st-model').value });
     const b = $('#st-test'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
-    try { await G.testKey(); toast('Ключ работает'); }
-    catch(e){ toast(e.message); }
+    const out = $('#st-test-out');
+    const t0 = Date.now();
+    try {
+      await G.testKey();
+      const ms = Date.now() - t0;
+      out.innerHTML = '<div class="note-box ok"><div class="t">Связь есть</div><div class="d">' +
+        'Модель ' + esc(S.settings.geminiModel || 'gemini-3.7-flash') + ' ответила за ' +
+        (ms / 1000).toFixed(1).replace('.', ',') + ' сек.' +
+        (ms > 8000 ? ' Это медленно — Google сейчас загружен, распознавание может подтормаживать.' : '') +
+        '</div></div>';
+    }
+    catch(e){
+      out.innerHTML = '<div class="note-box warn"><div class="t">Связи нет</div><div class="d">' +
+        esc(e.message) + '</div></div>';
+    }
     b.disabled = false; b.textContent = 'Проверить';
   };
   $('#st-save').onclick = () => {
@@ -1645,6 +1659,22 @@ function showFlyerConfirm(r, storeFallback, closePrev){
     });
 }
 
+/* Ошибку ИИ нельзя показывать тостом: он гаснет за две секунды, и человек
+   видит только «покрутилось и ничего». Пишем прямо в лист, до следующего действия. */
+function aiError(root, e){
+  const msg = (e && e.message) || 'Неизвестная ошибка';
+  const box = '<div class="note-box warn" data-aierr><div class="t">Не получилось</div>' +
+    '<div class="d">' + esc(msg) + '</div></div>';
+  const host = root && root.querySelector ? (root.querySelector('.sheet-body') || root) : null;
+  if (host){
+    const old = host.querySelector('[data-aierr]');
+    if (old) old.remove();
+    host.insertAdjacentHTML('beforeend', box);
+    host.scrollTop = host.scrollHeight;
+  }
+  toast(msg, 5000);
+}
+
 /* ---------- запись еды в один тап ---------- */
 function quickRow(it, sub, star){
   return '<div class="quick-wrap' + (it.done ? ' done' : '') + '">' +
@@ -1780,7 +1810,7 @@ function openPack(){
           return toast('Таблицу состава не видно. Сними её крупнее.');
         }
         packPortion(name || 'Продукт', per100, { src: src, packGrams: r.packGrams }, close);
-      }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; toast(e.message); }
+      }catch(e){ btn.disabled = false; btn.textContent = 'Повторить'; aiError(el, e); }
     };
     $('#pk-run', el).onclick = run;
     run();
@@ -2107,8 +2137,17 @@ function openCookFrom(){
     if (!have && !img) return toast('Напиши, что есть, или сними холодильник');
     S.setPantry(have);
     const btn = $('#ck-go', el);
-    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Думаю…';
+    btn.disabled = true;
+    let sec = 0;
+    const tick = setInterval(function(){
+      sec++;
+      btn.innerHTML = '<span class="spin"></span> Думаю… ' + sec + ' с';
+      if (sec === 12) $('#ck-out', el).innerHTML =
+        '<div class="tiny dim center">Модель разбирает список. Обычно 5–15 секунд, иногда до сорока.</div>';
+    }, 1000);
+    btn.innerHTML = '<span class="spin"></span> Думаю… 0 с';
     $('#ck-out', el).innerHTML = '';
+    const done = function(){ clearInterval(tick); btn.disabled = false; };
     try{
       const tg = E.targets();
       const t = E.dayTotals(todayISO());
@@ -2123,7 +2162,7 @@ function openCookFrom(){
         цель: 'снижение веса, беречь мышцы'
       }, img ? img.base64 : null, img ? img.mime : null);
 
-      btn.disabled = false; btn.textContent = 'Подобрать ещё раз';
+      done(); btn.textContent = 'Подобрать ещё раз';
       if (!r.ok || !r.dishes.length){
         $('#ck-out', el).innerHTML = '<div class="note-box warn"><div class="t">Из этого не собрать</div>' +
           '<div class="d">' + esc(r.note || 'Допиши, что ещё есть — особенно белковое.') + '</div></div>';
@@ -2131,8 +2170,9 @@ function openCookFrom(){
       }
       renderDishes(r.dishes, el, close);
     }catch(e){
-      btn.disabled = false; btn.textContent = 'Повторить';
-      toast(e.message);
+      done(); btn.textContent = 'Повторить';
+      $('#ck-out', el).innerHTML = '<div class="note-box warn"><div class="t">Не получилось</div>' +
+        '<div class="d">' + esc(e.message) + '</div></div>';
     }
   };
 
@@ -2168,7 +2208,7 @@ function renderDishes(dishes, el, closeSheet){
         (d.why ? '<div class="why' + (over ? ' tight' : '') + '">' +
           (over ? 'Не влезает: перебор на ' + num(d.kcal - left) + ' ккал. Съешь половину или отработай ходьбой. ' : '') +
           esc(d.why) + '</div>' : '') +
-        '<div class="uses">Пойдёт: ' + d.uses.map(u => esc(u.name) + ' ' + num(u.qty) + ' ' + esc(u.unit)).join(' · ') +
+        '<div class="uses">Пойдёт: ' + d.uses.map(u => esc(u.name) + (u.qty ? ' ' + num(u.qty) + ' ' + esc(u.unit) : '')).join(' · ') +
           (d.missing.length ? '<br><span class="miss">Не хватает: ' + d.missing.map(esc).join(', ') + '</span>' : '') + '</div>' +
         '<div class="how">' + esc(d.how) + '</div>' +
         '<div class="btn-row">' +
@@ -2190,7 +2230,7 @@ function renderDishes(dishes, el, closeSheet){
     const adopted = E.adoptAiDishes([{
       slot: d.slot, name: d.name, kcal: d.kcal, p: d.p, f: d.f, c: d.c,
       cookMin: d.cookMin, batch: false, keeps: 2, how: d.how,
-      ing: d.uses.map(u => ({ name: u.name, qty: u.qty, unit: u.unit }))
+      ing: d.uses.map(u => ({ name: u.name, qty: u.qty || 100, unit: u.unit || 'г' }))
     }]);
     if (!adopted.length) return toast('Не вышло сохранить это блюдо');
     S.setCustomRecipes(S.customRecipes.concat(adopted));

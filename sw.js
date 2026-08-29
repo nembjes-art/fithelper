@@ -1,5 +1,5 @@
 /* sw.js — офлайн-кэш */
-const CACHE = 'fithelper-v16';
+const CACHE = 'fithelper-v17';
 const ASSETS = [
   './', './index.html', './css/style.css',
   './js/app.js', './js/store.js', './js/engine.js', './js/gemini.js', './js/ui.js', './js/recipes.js', './js/prices.js', './js/quick.js', './js/remind.js', './js/lifts.js', './js/body.js', './prices.json',

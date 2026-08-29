@@ -18,7 +18,7 @@ async function call(parts, schema, systemText, opts){
   const chain = (opts && opts.lite) ? LITE_MODELS.concat([main]) : [main];
   let lastErr;
   for (const m of chain){
-    try { return await callOnce(parts, schema, systemText, m); }
+    try { return await callOnce(parts, schema, systemText, m, opts); }
     catch(e){
       lastErr = e;
       // модели нет у этого ключа — пробуем следующую; любая другая ошибка выходит сразу
@@ -28,7 +28,7 @@ async function call(parts, schema, systemText, opts){
   throw lastErr;
 }
 
-async function callOnce(parts, schema, systemText, model){
+async function callOnce(parts, schema, systemText, model, opts){
   const key = keyOrThrow();
   const body = {
     contents: [{ role: 'user', parts }],
@@ -40,11 +40,27 @@ async function callOnce(parts, schema, systemText, model){
   };
   if (systemText) body.systemInstruction = { parts: [{ text: systemText }] };
 
-  const res = await fetch(BASE + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+  // Без таймаута зависший ответ модели крутит спиннер бесконечно, и человек
+  // не понимает, сломалось приложение или просто долго думает.
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const limit = (opts && opts.timeout) || 45000;
+  const timer = ctl ? setTimeout(function(){ ctl.abort(); }, limit) : null;
+  let res;
+  try{
+    res = await fetch(BASE + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctl ? ctl.signal : undefined
+    });
+  }catch(e){
+    if (e && (e.name === 'AbortError' || /abort/i.test(e.message || ''))){
+      throw new Error('Модель не ответила за ' + Math.round(limit/1000) + ' сек. Обычно это перегрузка Google — нажми ещё раз через минуту.');
+    }
+    throw new Error('Нет связи с Google. Проверь интернет и попробуй снова.');
+  }finally{
+    if (timer) clearTimeout(timer);
+  }
 
   if (!res.ok){
     let msg = 'HTTP ' + res.status;
@@ -58,7 +74,12 @@ async function callOnce(parts, schema, systemText, model){
   }
   const data = await res.json();
   const txt = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || '';
-  if (!txt) throw new Error('Пустой ответ модели. Попробуй ещё раз или другое фото.');
+  const fin = data?.candidates?.[0]?.finishReason || '';
+  if (!txt){
+    if (fin === 'MAX_TOKENS') throw new Error('Ответ не поместился в лимит. Напиши поменьше продуктов и попробуй снова.');
+    if (fin === 'SAFETY' || fin === 'RECITATION') throw new Error('Модель отказалась отвечать. Переформулируй запрос.');
+    throw new Error('Пустой ответ модели. Попробуй ещё раз или другое фото.');
+  }
   try { return JSON.parse(txt); }
   catch(e){
     const m = txt.match(/\{[\s\S]*\}/);
@@ -532,18 +553,7 @@ const COOK_SCHEMA = {
         type: 'object',
         properties: {
           name: { type: 'string' },
-          uses: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                qty: { type: 'number' },
-                unit: { type: 'string', description: 'г | мл | шт' }
-              },
-              required: ['name','qty','unit']
-            }
-          },
+          uses: { type: 'array', items: { type: 'string' } },
           missing: { type: 'array', items: { type: 'string' } },
           grams: { type: 'number' },
           kcal: { type: 'number' },
@@ -572,13 +582,13 @@ const COOK_PROMPT = `Человек говорит, какие продукты 
 - Человек на дефиците калорий и худеет. Поэтому:
   главный приоритет — белок, второй — влезть в остаток калорий на день.
   Блюдо на 40 г белка и 350 ккал лучше, чем на 15 г белка и 350 ккал.
-- Предложи от 2 до 4 блюд, самое подходящее первым.
-- uses — что именно из его продуктов идёт в блюдо, с количеством: название, сколько и в чём
-  (г, мл или шт). Это должны быть реальные веса на одну порцию, а не «по вкусу».
+- Предложи РОВНО 2 или 3 блюда, самое подходящее первым. Больше не надо.
+- uses — что идёт в блюдо, строками вида «куриная грудка 120 г», «яйца 3 шт», «молоко 50 мл».
+  Всегда название, потом число, потом единица: г, мл или шт. Реальные веса на одну порцию.
 - grams — вес готовой порции. kcal, p, f, c — на эту порцию, честно, не занижай.
   Помни: белок 4 ккал/г, жир 9 ккал/г, углеводы 4 ккал/г — сумма должна сходиться с kcal.
 - cookMin — сколько реально уйдёт минут вместе с нарезкой.
-- how — как готовить, 2–4 коротких предложения, по шагам. Без художественных описаний.
+- how — как готовить: 2–3 коротких предложения по шагам, уложись в 300 знаков. Без описаний вкуса.
 - why — одна фраза: почему именно это блюдо ему сейчас подходит.
   Опирайся на остаток калорий и белка, который тебе дали.
 - slot — к какому приёму пищи это ближе.
@@ -586,13 +596,32 @@ const COOK_PROMPT = `Человек говорит, какие продукты 
 Если из перечисленного нормальной еды не собрать — верни ok:false и в note скажи по-русски,
 чего конкретно не хватает, чтобы получилось хоть что-то белковое.`;
 
+/* «куриная грудка 120 г» -> {name:'куриная грудка', qty:120, unit:'г'} */
+function parseUse(x){
+  if (x && typeof x === 'object' && x.name){
+    return { name: String(x.name).trim(),
+             qty: Math.max(1, Math.round(Number(x.qty) || 0)) || 1,
+             unit: ['г','мл','шт'].indexOf(x.unit) >= 0 ? x.unit : 'г' };
+  }
+  const s = String(x || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(.+?)[\s,]+(\d+(?:[.,]\d+)?)\s*(г|гр|грамм\w*|мл|шт|штук\w*)\.?$/i);
+  if (!m) return { name: s, qty: 0, unit: '' };
+  const u = m[3].toLowerCase();
+  return {
+    name: m[1].trim(),
+    qty: Math.max(1, Math.round(Number(m[2].replace(',', '.')) || 0)) || 1,
+    unit: u.indexOf('мл') === 0 ? 'мл' : (u.indexOf('шт') === 0 ? 'шт' : 'г')
+  };
+}
+
 export async function cookFrom(have, ctx, base64, mime){
   const parts = [{
     text: 'Что есть дома: ' + (have || '(не написал, смотри фото)') +
       '\n\nСостояние дня и ограничения:\n' + JSON.stringify(ctx, null, 1)
   }];
   if (base64) parts.push({ inline_data: { mime_type: mime || 'image/jpeg', data: base64 } });
-  const r = await call(parts, COOK_SCHEMA, COOK_PROMPT);
+  const r = await call(parts, COOK_SCHEMA, COOK_PROMPT, base64 ? { timeout: 60000 } : { lite: true, timeout: 45000 });
   const dishes = (r.dishes || []).map(function(d){
     const p = Math.max(0, Math.round((Number(d.p) || 0) * 10) / 10);
     const f = Math.max(0, Math.round((Number(d.f) || 0) * 10) / 10);
@@ -604,13 +633,7 @@ export async function cookFrom(have, ctx, base64, mime){
     if (fromMacros > 0 && (!kcal || Math.abs(kcal - fromMacros) / fromMacros > 0.15)) kcal = fromMacros;
     return {
       name: String(d.name || 'Блюдо').trim(),
-      uses: (d.uses || []).filter(function(x){ return x && x.name; }).map(function(x){
-        return {
-          name: String(x.name).trim(),
-          qty: Math.max(1, Math.round(Number(x.qty) || 0)) || 1,
-          unit: ['г','мл','шт'].indexOf(x.unit) >= 0 ? x.unit : 'г'
-        };
-      }),
+      uses: (d.uses || []).map(parseUse).filter(Boolean),
       missing: (d.missing || []).map(String).filter(Boolean),
       grams: Math.round(Number(d.grams) || 0),
       kcal: kcal, p: p, f: f, c: c,
