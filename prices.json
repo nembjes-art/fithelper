@@ -1,5 +1,5 @@
 {
-  "updated": "2026-08-28",
+  "updated": "2026-08-31",
   "city": "Нарва",
   "source": "ostukorvid.ee (обычные цены Maxima и Rimi) + maxima.ee/pakkumised (акции)",
   "note": "Ориентир, а не гарантия — сети меняют цены каждую неделю. Lidl цены в интернет не выкладывает, только бумажные листовки: снимай их на камеру в приложении.",
@@ -35,88 +35,141 @@
     {
       "key": "курица_грудка",
       "store": "rimi",
-      "product": "Eestimaine broilerifilee Tallegg, kg",
+      "product": "Eestimaine broilerifilee kg Tallegg",
       "price": 9.35,
       "pack": "кг",
       "per": 9.35,
       "base": "кг",
-      "until": null
+      "until": null,
+      "note": "Та же цена, что в Maxima"
     },
     {
       "key": "курица_грудка",
       "store": "rimi",
-      "product": "Broileri rinnafilee A-klass Rimi 500 г",
+      "product": "Broileri rinnafilee värske A-klass Rimi 500g",
       "price": 3.29,
       "pack": "500 г",
       "per": 6.58,
       "base": "кг",
       "until": null,
-      "note": "Своя марка Rimi — дешевле Tallegg"
+      "note": "Своя марка Rimi — на треть дешевле Tallegg"
     },
     {
       "key": "курица_окорочка",
       "store": "maxima",
-      "product": "Eestimaine broilerikoib Tallegg",
+      "product": "Eestimaine broilerikoib TALLEGG, kg",
       "price": 1.99,
       "pack": "кг",
       "per": 1.99,
       "base": "кг",
       "old": 4.79,
       "until": "2026-08-31",
-      "note": "Втрое дешевле грудки. Кожу снять — белка почти столько же"
-    },
-    {
-      "key": "курица_окорочка",
-      "store": "rimi",
-      "product": "Broileri poolkoivad Rimi 500 г",
-      "price": 1.49,
-      "pack": "500 г",
-      "per": 2.98,
-      "base": "кг",
-      "until": null
+      "note": "Акция, последний день"
     },
     {
       "key": "курица_окорочка",
       "store": "maxima",
-      "product": "Jah. broileri poolkoib A-klass TALUPOJA, kg",
+      "product": "Jah.broil.poolkoib A-klass TALUPOJA, kg",
       "price": 3.69,
       "pack": "кг",
       "per": 3.69,
       "base": "кг",
       "until": null,
-      "note": "Обычная цена, без акции"
+      "note": "Обычная цена без акции"
+    },
+    {
+      "key": "курица_окорочка",
+      "store": "maxima",
+      "product": "Jahutatud broiler A-klass WELL DONE, kg",
+      "price": 3.49,
+      "pack": "кг",
+      "per": 3.49,
+      "base": "кг",
+      "until": null,
+      "note": "Целая тушка — дешевле окорочков"
+    },
+    {
+      "key": "курица_окорочка",
+      "store": "rimi",
+      "product": "Broileri poolkoivad Rimi 500g",
+      "price": 1.49,
+      "pack": "500 г",
+      "per": 2.98,
+      "base": "кг",
+      "until": null,
+      "note": "Самое дешёвое мясо в Rimi"
+    },
+    {
+      "key": "курица_окорочка",
+      "store": "rimi",
+      "product": "Broilerikoivad Rimi värske A-klass kg",
+      "price": 3.59,
+      "pack": "кг",
+      "per": 3.59,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "курица_окорочка",
+      "store": "rimi",
+      "product": "Broilerikoib seljaosaga Rimi kg",
+      "price": 3.79,
+      "pack": "кг",
+      "per": 3.79,
+      "base": "кг",
+      "until": null
     },
     {
       "key": "фарш_куриный",
-      "store": "rimi",
-      "product": "Broilerikoiva hakkliha Rimi 400 г",
-      "price": 2.99,
-      "pack": "400 г",
-      "per": 7.48,
+      "store": "maxima",
+      "product": "Broilerifilee hakklihamass KEKAVA, 450g",
+      "price": 3.99,
+      "pack": "450 г",
+      "per": 8.87,
       "base": "кг",
       "until": null
     },
     {
       "key": "фарш_куриный",
       "store": "rimi",
-      "product": "Broileririnnafilee hakkliha Fit 300 г",
+      "product": "Broilerikoiva hakkliha Rimi 400g",
       "price": 2.99,
-      "pack": "300 г",
-      "per": 9.97,
+      "pack": "400 г",
+      "per": 7.48,
       "base": "кг",
-      "old": 3.49,
+      "until": null,
+      "note": "Дешевле фарша из грудки"
+    },
+    {
+      "key": "фарш_индейки",
+      "store": "maxima",
+      "product": "Jah.hakklihasegu kalkunilihast, 400g",
+      "price": 3.59,
+      "pack": "400 г",
+      "per": 8.98,
+      "base": "кг",
       "until": null
     },
     {
       "key": "фарш_индейки",
       "store": "rimi",
-      "product": "Kalkuni rinnafilee hakkliha Rimi 500 г",
+      "product": "Kalkunihakklihasegu Rimi 500g",
+      "price": 3.99,
+      "pack": "500 г",
+      "per": 7.98,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "фарш_индейки",
+      "store": "rimi",
+      "product": "Kalkuni rinnafilee hakkliha Rimi 500g",
       "price": 5.89,
       "pack": "500 г",
       "per": 11.78,
       "base": "кг",
       "until": null,
-      "note": "Дорого. Куриный фарш вдвое дешевле"
+      "note": "Из чистой грудки — дорого"
     },
     {
       "key": "индейка",
@@ -126,7 +179,6 @@
       "pack": "кг",
       "per": 8.99,
       "base": "кг",
-      "old": 11.39,
       "until": null
     },
     {
@@ -143,28 +195,19 @@
     {
       "key": "свинина",
       "store": "maxima",
-      "product": "Seaabaliha kamarata, kondita",
+      "product": "Seaabaliha kamarata, kondita, kg",
       "price": 2.59,
       "pack": "кг",
       "per": 2.59,
       "base": "кг",
       "old": 5.99,
-      "until": "2026-08-31"
-    },
-    {
-      "key": "свинина",
-      "store": "rimi",
-      "product": "Seahakkliha Rimi 500 г",
-      "price": 2.15,
-      "pack": "500 г",
-      "per": 4.3,
-      "base": "кг",
-      "until": null
+      "until": "2026-08-31",
+      "note": "Акция, последний день"
     },
     {
       "key": "свинина",
       "store": "maxima",
-      "product": "Seahakkliha WELL DONE 400 г",
+      "product": "Seahakkliha WELL DONE, 400g",
       "price": 1.89,
       "pack": "400 г",
       "per": 4.72,
@@ -172,9 +215,39 @@
       "until": null
     },
     {
+      "key": "свинина",
+      "store": "rimi",
+      "product": "Seahakklihasegu jahutatud Farmers Market 350g",
+      "price": 1.65,
+      "pack": "350 г",
+      "per": 4.71,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "свинина",
+      "store": "rimi",
+      "product": "Seahakkliha Rimi 500g",
+      "price": 2.15,
+      "pack": "500 г",
+      "per": 4.3,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "говядина",
+      "store": "maxima",
+      "product": "Veise hakkliha BEST BUTCHER 450g",
+      "price": 4.99,
+      "pack": "450 г",
+      "per": 11.09,
+      "base": "кг",
+      "until": null
+    },
+    {
       "key": "говядина",
       "store": "rimi",
-      "product": "Veisehakkliha Rimi 400 г",
+      "product": "Veisehakkliha Rimi 400g",
       "price": 3.99,
       "pack": "400 г",
       "per": 9.98,
@@ -203,24 +276,24 @@
     },
     {
       "key": "треска",
-      "store": "rimi",
-      "product": "Atlandi tursa hakkliha Nowaco külmutatud 450 г",
-      "price": 4.49,
-      "pack": "450 г",
-      "per": 9.98,
-      "base": "кг",
-      "until": null,
-      "note": "Филе трески в е-магазине не продают — это фарш из неё, по белку то же"
-    },
-    {
-      "key": "треска",
       "store": "maxima",
-      "product": "Jahutatud Atlandi tursa hakkliha 450 г",
+      "product": "Külmutatud Atlandi tursa hakkliha 450g",
       "price": 4.49,
       "pack": "450 г",
       "per": 9.98,
       "base": "кг",
       "until": null
+    },
+    {
+      "key": "треска",
+      "store": "rimi",
+      "product": "Atlandi tursa hakkliha Nowaco külmutatud 450g",
+      "price": 4.49,
+      "pack": "450 г",
+      "per": 9.98,
+      "base": "кг",
+      "until": null,
+      "note": "Филе трески в е-магазине не продают — это фарш из неё"
     },
     {
       "key": "сельдь",
@@ -230,14 +303,13 @@
       "pack": "500 г",
       "per": 7.98,
       "base": "кг",
-      "old": 6.99,
-      "until": "2026-09-28",
+      "until": null,
       "note": "Дешёвая омега-3"
     },
     {
       "key": "творог",
       "store": "maxima",
-      "product": "Kodujuust 5% Farm Milk 500 г",
+      "product": "Kodujuust 5% Farm Milk, 500g",
       "price": 1.09,
       "pack": "500 г",
       "per": 2.18,
@@ -247,8 +319,29 @@
     },
     {
       "key": "творог",
+      "store": "maxima",
+      "product": "Kodujuust FARM MILK 5%, 200g",
+      "price": 0.69,
+      "pack": "200 г",
+      "per": 3.45,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "творог",
+      "store": "maxima",
+      "product": "Kohupiim FARMI Lahja 0,5%, 200g",
+      "price": 0.79,
+      "pack": "200 г",
+      "per": 3.95,
+      "base": "кг",
+      "until": null,
+      "note": "Обезжиренный творог"
+    },
+    {
+      "key": "творог",
       "store": "rimi",
-      "product": "Kodujuust väherasvane Rimi 3% 500 г",
+      "product": "Kodujuust väherasvane Rimi 3% 500g",
       "price": 1.75,
       "pack": "500 г",
       "per": 3.5,
@@ -258,28 +351,58 @@
     {
       "key": "творог",
       "store": "rimi",
-      "product": "Kohupiim rasvatu MO Saaremaa 500 г",
+      "product": "Kodujuust Rimi 5% 500g",
+      "price": 1.95,
+      "pack": "500 г",
+      "per": 3.9,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "творог",
+      "store": "rimi",
+      "product": "Pehme kohupiim rasvatu MO Saaremaa 500g",
       "price": 1.99,
       "pack": "500 г",
       "per": 3.98,
       "base": "кг",
-      "old": 2.55,
       "until": null
     },
     {
       "key": "йогурт",
-      "store": "rimi",
-      "product": "Jogurt maitsestamata Rimi Smart 1 кг",
-      "price": 1.79,
+      "store": "maxima",
+      "product": "Jogurt FARM MILK Naturaalne 3%, 400g",
+      "price": 0.91,
+      "pack": "400 г",
+      "per": 2.28,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "йогурт",
+      "store": "maxima",
+      "product": "Jogurt HELLUS maitsestamata, 1kg",
+      "price": 2.05,
       "pack": "кг",
-      "per": 1.79,
+      "per": 2.05,
       "base": "кг",
       "until": null
     },
     {
       "key": "йогурт",
       "store": "rimi",
-      "product": "Kreeka jogurt maitsestamata Rimi 400 г",
+      "product": "Jogurt maitsestamata Rimi Smart 1kg",
+      "price": 1.79,
+      "pack": "кг",
+      "per": 1.79,
+      "base": "кг",
+      "until": null,
+      "note": "Дешевле любого йогурта в Maxima"
+    },
+    {
+      "key": "йогурт",
+      "store": "rimi",
+      "product": "Kreeka jogurt maitsestamata Rimi 400g",
       "price": 1.09,
       "pack": "400 г",
       "per": 2.73,
@@ -290,7 +413,7 @@
     {
       "key": "сыр",
       "store": "maxima",
-      "product": "Juust Vene Farm Milk 45% 250 г",
+      "product": "Juust FARM MILK Vene, 45%, 250g",
       "price": 0.92,
       "pack": "250 г",
       "per": 3.68,
@@ -300,60 +423,143 @@
     {
       "key": "сыр",
       "store": "maxima",
-      "product": "Viilutatud juust Estover 500 г",
+      "product": "Viilutatud juust Estover 500g",
       "price": 2.89,
       "pack": "500 г",
       "per": 5.78,
       "base": "кг",
       "old": 6.29,
-      "until": "2026-08-31"
+      "until": "2026-08-31",
+      "note": "Акция, последний день"
+    },
+    {
+      "key": "сыр",
+      "store": "maxima",
+      "product": "Guni juust, EPIIM, 400 g",
+      "price": 4.99,
+      "pack": "400 г",
+      "per": 12.48,
+      "base": "кг",
+      "until": null
     },
     {
       "key": "сыр",
       "store": "rimi",
-      "product": "Juust Tilsit viilutatud Rimi 45% 500 г",
-      "price": 2.73,
+      "product": "Juust Rimi Basic Tilsit 45% 250g",
+      "price": 1.79,
+      "pack": "250 г",
+      "per": 7.16,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "сыр",
+      "store": "rimi",
+      "product": "Juust Vene Rimi 45% 500g",
+      "price": 3.59,
       "pack": "500 г",
-      "per": 5.46,
+      "per": 7.18,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "сыр",
+      "store": "rimi",
+      "product": "Juust tilsit E-piim 350g",
+      "price": 3.49,
+      "pack": "350 г",
+      "per": 9.97,
       "base": "кг",
       "until": null
     },
     {
       "key": "масло_сливочное",
       "store": "maxima",
-      "product": "Või 82% 200 г",
+      "product": "Või 82%, VALIO VIOLA, 200g",
       "price": 0.99,
       "pack": "200 г",
       "per": 4.95,
       "base": "кг",
       "old": 2.29,
-      "until": "2026-08-31"
+      "until": "2026-08-31",
+      "note": "Акция, последний день"
     },
     {
       "key": "масло_сливочное",
       "store": "maxima",
-      "product": "Või WELL DONE 82% 500 г",
-      "price": 2.45,
+      "product": "Või WELL DONE 82% 500g",
+      "price": 2.31,
       "pack": "500 г",
-      "per": 4.9,
+      "per": 4.62,
       "base": "кг",
       "until": null,
       "note": "Обычная цена без акции"
     },
     {
       "key": "масло_сливочное",
-      "store": "rimi",
-      "product": "Või Rimi Smart 82% 180 г",
-      "price": 0.98,
+      "store": "maxima",
+      "product": "Või FARM MILK 82%, 180g",
+      "price": 0.99,
       "pack": "180 г",
-      "per": 5.44,
+      "per": 5.5,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "масло_сливочное",
+      "store": "rimi",
+      "product": "Või Rimi Smart 82% 180g",
+      "price": 0.95,
+      "pack": "180 г",
+      "per": 5.28,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "масло_сливочное",
+      "store": "rimi",
+      "product": "Võru või 82%, VALIO, 200 g",
+      "price": 1.49,
+      "pack": "200 г",
+      "per": 7.45,
       "base": "кг",
       "until": null
     },
     {
       "key": "яйца",
+      "store": "maxima",
+      "product": "Pesamuna S10 EGGO, 10tk",
+      "price": 1.35,
+      "pack": "10 шт",
+      "per": 0.14,
+      "base": "шт",
+      "until": null,
+      "note": "Мелкие, но самые дешёвые"
+    },
+    {
+      "key": "яйца",
+      "store": "maxima",
+      "product": "Õrrekanade munad M 10 tk",
+      "price": 1.99,
+      "pack": "10 шт",
+      "per": 0.2,
+      "base": "шт",
+      "until": null
+    },
+    {
+      "key": "яйца",
+      "store": "maxima",
+      "product": "Õrrekanade munad WELL DONE, 10tk",
+      "price": 2.69,
+      "pack": "10 шт",
+      "per": 0.27,
+      "base": "шт",
+      "until": null
+    },
+    {
+      "key": "яйца",
       "store": "rimi",
-      "product": "Kanamunad Rimi Basic M 10 шт",
+      "product": "Kanamunad Rimi Basic M 10tk",
       "price": 1.59,
       "pack": "10 шт",
       "per": 0.16,
@@ -362,11 +568,11 @@
     },
     {
       "key": "яйца",
-      "store": "maxima",
-      "product": "Õrrekanade munad WELL DONE 10 шт",
-      "price": 2.69,
+      "store": "rimi",
+      "product": "Õrrekanade munad A/M Nr.2 Rimi Smart 10tk",
+      "price": 2.49,
       "pack": "10 шт",
-      "per": 0.27,
+      "per": 0.25,
       "base": "шт",
       "until": null
     },
@@ -383,18 +589,18 @@
     },
     {
       "key": "овсянка",
-      "store": "rimi",
-      "product": "Kiirkaerahelbed Rimi 450 г",
+      "store": "maxima",
+      "product": "Täistera kaerahelbed WELL DONE 500g",
       "price": 0.99,
-      "pack": "450 г",
-      "per": 2.2,
+      "pack": "500 г",
+      "per": 1.98,
       "base": "кг",
       "until": null
     },
     {
       "key": "овсянка",
       "store": "maxima",
-      "product": "Kaerahelbed BALTIX 1 кг",
+      "product": "Kaerahelbed BALTIX 1kg",
       "price": 1.59,
       "pack": "кг",
       "per": 1.59,
@@ -402,19 +608,30 @@
       "until": null
     },
     {
-      "key": "рис",
+      "key": "овсянка",
       "store": "rimi",
-      "product": "Pikateraline riis Rimi Basic 800 г",
-      "price": 0.79,
-      "pack": "800 г",
-      "per": 0.99,
+      "product": "Baltix Kiirkaerahelbed 1kg",
+      "price": 1.39,
+      "pack": "кг",
+      "per": 1.39,
+      "base": "кг",
+      "until": null,
+      "note": "Тот же Baltix дешевле, чем в Maxima"
+    },
+    {
+      "key": "овсянка",
+      "store": "rimi",
+      "product": "Kiirkaerahelbed Rimi 450g",
+      "price": 0.99,
+      "pack": "450 г",
+      "per": 2.2,
       "base": "кг",
       "until": null
     },
     {
-      "key": "гречка",
-      "store": "rimi",
-      "product": "Tatar aurutatud Rimi 800 г",
+      "key": "рис",
+      "store": "maxima",
+      "product": "Aurutatud riis EXTRA LINE 800g",
       "price": 1.59,
       "pack": "800 г",
       "per": 1.99,
@@ -422,19 +639,101 @@
       "until": null
     },
     {
+      "key": "рис",
+      "store": "maxima",
+      "product": "Jasmiini riis WELL DONE 400g",
+      "price": 1.09,
+      "pack": "400 г",
+      "per": 2.73,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "рис",
+      "store": "rimi",
+      "product": "Pikateraline riis Rimi Basic 800g",
+      "price": 0.79,
+      "pack": "800 г",
+      "per": 0.99,
+      "base": "кг",
+      "until": null,
+      "note": "Самый дешёвый гарнир вообще"
+    },
+    {
+      "key": "рис",
+      "store": "rimi",
+      "product": "Aurutatud riis Rimi Smart 800g",
+      "price": 1.55,
+      "pack": "800 г",
+      "per": 1.94,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "гречка",
+      "store": "maxima",
+      "product": "Tatar, WELL DONE, 800 g",
+      "price": 1.29,
+      "pack": "800 г",
+      "per": 1.61,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "гречка",
+      "store": "maxima",
+      "product": "Tatar EXTRA LINE 4x100g",
+      "price": 0.99,
+      "pack": "400 г",
+      "per": 2.47,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "гречка",
+      "store": "rimi",
+      "product": "Tatar Rimi, aurutatud 800g",
+      "price": 1.55,
+      "pack": "800 г",
+      "per": 1.94,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "гречка",
+      "store": "rimi",
+      "product": "Tatar Rimi Basic 4x100g",
+      "price": 0.98,
+      "pack": "400 г",
+      "per": 2.45,
+      "base": "кг",
+      "until": null
+    },
+    {
       "key": "булгур",
       "store": "maxima",
-      "product": "Bulgur BALTIX 4×100 г",
-      "price": 1.39,
+      "product": "Bulgur GALINTA 4x100g",
+      "price": 1.99,
       "pack": "400 г",
-      "per": 3.47,
+      "per": 4.97,
+      "base": "кг",
+      "until": null,
+      "note": "В Maxima выбора почти нет"
+    },
+    {
+      "key": "булгур",
+      "store": "rimi",
+      "product": "Pruun täistera bulgur Rimi 400g",
+      "price": 1.25,
+      "pack": "400 г",
+      "per": 3.13,
       "base": "кг",
       "until": null
     },
     {
       "key": "булгур",
       "store": "rimi",
-      "product": "Bulgur Rimi 400 г",
+      "product": "Bulgur Rimi 400g",
       "price": 1.65,
       "pack": "400 г",
       "per": 4.12,
@@ -443,8 +742,28 @@
     },
     {
       "key": "киноа",
+      "store": "maxima",
+      "product": "Punane kinoa Just Nature, 500g",
+      "price": 3.55,
+      "pack": "500 г",
+      "per": 7.1,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "киноа",
+      "store": "maxima",
+      "product": "Valge kinoa JUST NATURE 500g",
+      "price": 3.85,
+      "pack": "500 г",
+      "per": 7.7,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "киноа",
       "store": "rimi",
-      "product": "Kinoa Rimi Free From 375 г",
+      "product": "Kinoa Rimi Free From 375g",
       "price": 2.69,
       "pack": "375 г",
       "per": 7.17,
@@ -454,11 +773,11 @@
     },
     {
       "key": "киноа",
-      "store": "maxima",
-      "product": "Valge kinoa JUST NATURE 500 г",
-      "price": 3.85,
-      "pack": "500 г",
-      "per": 7.7,
+      "store": "rimi",
+      "product": "Kinoa valge Rimi 400g",
+      "price": 2.99,
+      "pack": "400 г",
+      "per": 7.48,
       "base": "кг",
       "until": null
     },
@@ -475,6 +794,18 @@
     },
     {
       "key": "картофель",
+      "store": "maxima",
+      "product": "Pestud kartul Laheotsa 2kg",
+      "price": 1.75,
+      "pack": "2 кг",
+      "per": 0.88,
+      "base": "кг",
+      "old": 2.79,
+      "until": "2026-08-31",
+      "note": "Акция, последний день"
+    },
+    {
+      "key": "картофель",
       "store": "rimi",
       "product": "Kartul pesemata, kg",
       "price": 0.34,
@@ -485,14 +816,115 @@
     },
     {
       "key": "картофель",
-      "store": "maxima",
-      "product": "Pestud kartul Laheotsa 2 кг",
-      "price": 1.75,
+      "store": "rimi",
+      "product": "Kartul Heakartul 2kg",
+      "price": 2.59,
       "pack": "2 кг",
-      "per": 0.88,
+      "per": 1.3,
       "base": "кг",
-      "old": 2.79,
-      "until": "2026-08-31"
+      "until": null
+    },
+    {
+      "key": "ягоды",
+      "store": "maxima",
+      "product": "Külmutatud maasikad BAUER, 400g",
+      "price": 1.99,
+      "pack": "400 г",
+      "per": 4.97,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "ягоды",
+      "store": "maxima",
+      "product": "Külmutatud maasikad WELL DONE, 400g",
+      "price": 2.09,
+      "pack": "400 г",
+      "per": 5.23,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "ягоды",
+      "store": "rimi",
+      "product": "Maasikad kiirkülmutatud Rimi Smart 1kg",
+      "price": 3.99,
+      "pack": "кг",
+      "per": 3.99,
+      "base": "кг",
+      "until": null,
+      "note": "Килограммовый пакет — вдвое выгоднее мелких"
+    },
+    {
+      "key": "ягоды",
+      "store": "rimi",
+      "product": "Külmutatud maasikad Rimi 400g",
+      "price": 2.79,
+      "pack": "400 г",
+      "per": 6.98,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "овощная_смесь",
+      "store": "maxima",
+      "product": "Külm.porgandi&herne segu WELL DONE, 400g",
+      "price": 0.97,
+      "pack": "400 г",
+      "per": 2.42,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "овощная_смесь",
+      "store": "maxima",
+      "product": "Külm.rohelised oad WELL DONE, 400g",
+      "price": 0.99,
+      "pack": "400 г",
+      "per": 2.47,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "овощная_смесь",
+      "store": "rimi",
+      "product": "Herned sügavkülmutatud Rimi 400g",
+      "price": 0.99,
+      "pack": "400 г",
+      "per": 2.47,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "овощная_смесь",
+      "store": "rimi",
+      "product": "Porgandikuubikud ja herne segu Rimi 400g",
+      "price": 1.29,
+      "pack": "400 г",
+      "per": 3.23,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "брокколи",
+      "store": "maxima",
+      "product": "Külmutatud brokkoli WELL DONE, 400g",
+      "price": 1.29,
+      "pack": "400 г",
+      "per": 3.23,
+      "base": "кг",
+      "until": null,
+      "note": "Замороженная втрое дешевле свежей"
+    },
+    {
+      "key": "брокколи",
+      "store": "rimi",
+      "product": "Hortex brokolisegu 400g",
+      "price": 1.29,
+      "pack": "400 г",
+      "per": 3.23,
+      "base": "кг",
+      "until": null
     },
     {
       "key": "морковь_лук",
@@ -501,16 +933,6 @@
       "price": 0.59,
       "pack": "кг",
       "per": 0.59,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "морковь_лук",
-      "store": "rimi",
-      "product": "Porgand pestud Eesti, kg",
-      "price": 0.65,
-      "pack": "кг",
-      "per": 0.65,
       "base": "кг",
       "until": null
     },
@@ -527,64 +949,63 @@
     {
       "key": "морковь_лук",
       "store": "rimi",
+      "product": "Porgand, kg Eesti",
+      "price": 0.65,
+      "pack": "кг",
+      "per": 0.65,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "морковь_лук",
+      "store": "rimi",
       "product": "Sibul 50/70 mm, kg",
-      "price": 0.36,
+      "price": 0.42,
       "pack": "кг",
-      "per": 0.36,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "овощная_смесь",
-      "store": "maxima",
-      "product": "Külm. kevadköögiviljad WELL DONE 400 г",
-      "price": 1.09,
-      "pack": "400 г",
-      "per": 2.73,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "овощная_смесь",
-      "store": "rimi",
-      "product": "Porgandi- ja hernesegu Rimi külmutatud 400 г",
-      "price": 1.29,
-      "pack": "400 г",
-      "per": 3.23,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "брокколи",
-      "store": "maxima",
-      "product": "Külmutatud brokkoli WELL DONE 400 г",
-      "price": 1.29,
-      "pack": "400 г",
-      "per": 3.23,
+      "per": 0.42,
       "base": "кг",
       "until": null,
-      "note": "Замороженная втрое дешевле свежей"
+      "note": "Подорожал с 0.36"
     },
     {
-      "key": "брокколи",
-      "store": "rimi",
-      "product": "Brokolisegu Hortex 400 г",
-      "price": 1.29,
-      "pack": "400 г",
-      "per": 3.23,
+      "key": "перец_шпинат",
+      "store": "maxima",
+      "product": "Paprika punane, kg",
+      "price": 2.49,
+      "pack": "кг",
+      "per": 2.49,
       "base": "кг",
       "until": null
     },
     {
-      "key": "огурцы_помидоры",
+      "key": "перец_шпинат",
       "store": "rimi",
-      "product": "Tomat, kg",
-      "price": 0.79,
+      "product": "Paprika punane, kg",
+      "price": 2.29,
       "pack": "кг",
-      "per": 0.79,
+      "per": 2.29,
       "base": "кг",
-      "until": null,
-      "note": "Лучшая цена за год"
+      "until": null
+    },
+    {
+      "key": "кабачок_перец",
+      "store": "maxima",
+      "product": "Paprika punane, kg",
+      "price": 2.49,
+      "pack": "кг",
+      "per": 2.49,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "кабачок_перец",
+      "store": "rimi",
+      "product": "Paprika punane, kg",
+      "price": 2.29,
+      "pack": "кг",
+      "per": 2.29,
+      "base": "кг",
+      "until": null
     },
     {
       "key": "огурцы_помидоры",
@@ -593,16 +1014,6 @@
       "price": 1.69,
       "pack": "кг",
       "per": 1.69,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "огурцы_помидоры",
-      "store": "rimi",
-      "product": "Kurk lühike, kg",
-      "price": 2.59,
-      "pack": "кг",
-      "per": 2.59,
       "base": "кг",
       "until": null
     },
@@ -617,76 +1028,26 @@
       "until": null
     },
     {
-      "key": "перец_шпинат",
+      "key": "огурцы_помидоры",
       "store": "rimi",
-      "product": "Paprika punane, kg",
-      "price": 2.29,
+      "product": "Tomat, kg",
+      "price": 0.79,
       "pack": "кг",
-      "per": 2.29,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "перец_шпинат",
-      "store": "maxima",
-      "product": "Paprika punane, kg",
-      "price": 2.49,
-      "pack": "кг",
-      "per": 2.49,
+      "per": 0.79,
       "base": "кг",
       "until": null,
-      "note": "Ориентир — свежий перец у сетей близко по цене"
+      "note": "Вдвое дешевле, чем в Maxima"
     },
     {
-      "key": "кабачок_перец",
+      "key": "огурцы_помидоры",
       "store": "rimi",
-      "product": "Paprika punane, kg",
-      "price": 2.29,
-      "pack": "кг",
-      "per": 2.29,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "кабачок_перец",
-      "store": "maxima",
-      "product": "Paprika punane, kg",
-      "price": 2.49,
-      "pack": "кг",
-      "per": 2.49,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "фасоль",
-      "store": "rimi",
-      "product": "Konserv. valged oad Rimi Basic 400/200 г",
-      "price": 0.89,
-      "pack": "400 г",
-      "per": 2.23,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "фасоль",
-      "store": "maxima",
-      "product": "Kons. küpsetatud oad WELL DONE 400 г",
-      "price": 1.39,
-      "pack": "400 г",
-      "per": 3.47,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "томаты_консерв",
-      "store": "rimi",
-      "product": "Tomatid tükeldatud Rimi 400 г",
+      "product": "Kurk lühike, kg",
       "price": 1.69,
-      "pack": "400 г",
-      "per": 4.22,
+      "pack": "кг",
+      "per": 1.69,
       "base": "кг",
-      "old": 2.99,
-      "until": null
+      "until": null,
+      "note": "Огурец резко подешевел — было 2.59"
     },
     {
       "key": "томаты_консерв",
@@ -699,20 +1060,81 @@
       "until": null
     },
     {
+      "key": "томаты_консерв",
+      "store": "rimi",
+      "product": "Tomatid tükeldatud Rimi 400 г",
+      "price": 1.69,
+      "pack": "400 г",
+      "per": 4.22,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "фасоль",
+      "store": "maxima",
+      "product": "Kons.küps.oad tomatikast. EXTRA LINE 400g",
+      "price": 0.95,
+      "pack": "400 г",
+      "per": 2.37,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "фасоль",
+      "store": "maxima",
+      "product": "Kons.punased oad EXTRA LINE 400g",
+      "price": 1.15,
+      "pack": "400 г",
+      "per": 2.87,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "фасоль",
+      "store": "rimi",
+      "product": "Punased oad, 400 g",
+      "price": 0.88,
+      "pack": "400 г",
+      "per": 2.2,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "фасоль",
+      "store": "rimi",
+      "product": "Konserveeritud valged oad Rimi Basic 400g",
+      "price": 0.89,
+      "pack": "400 г",
+      "per": 2.23,
+      "base": "кг",
+      "until": null
+    },
+    {
       "key": "масло_оливковое",
       "store": "maxima",
-      "product": "Rapsiõli EXTRA LINE 1 л",
+      "product": "Rapsiõli EXTRA LINE 1l",
       "price": 0.99,
       "pack": "л",
       "per": 0.99,
       "base": "л",
       "until": null,
-      "note": "Обычная цена дешевле их же «акции» на OLIVIA за 2.49"
+      "note": "Рапсовое. Для жарки — то же самое, что оливковое"
+    },
+    {
+      "key": "масло_оливковое",
+      "store": "maxima",
+      "product": "Oliivijääkõli EXTRA LINE 1l",
+      "price": 4.99,
+      "pack": "л",
+      "per": 4.99,
+      "base": "л",
+      "until": null,
+      "note": "Оливковое, самое дешёвое"
     },
     {
       "key": "масло_оливковое",
       "store": "rimi",
-      "product": "Rapsiõli Rimi Basic 1 л",
+      "product": "Rapsiõli Rimi Basic 1l",
       "price": 1.09,
       "pack": "л",
       "per": 1.09,
@@ -722,21 +1144,53 @@
     {
       "key": "масло_оливковое",
       "store": "rimi",
-      "product": "Oliivijääkõli Rimi Basic 1 л",
-      "price": 5.95,
-      "pack": "л",
-      "per": 5.95,
+      "product": "Oliiviõli Extra Light Rimi 750ml",
+      "price": 9.29,
+      "pack": "750 мл",
+      "per": 12.39,
       "base": "л",
       "until": null,
-      "note": "Оливковое. Для жарки рапсовое за 0.99 — то же самое"
+      "note": "Втрое дороже, чем в Maxima"
     },
     {
-      "key": "фрукты",
+      "key": "орехи",
+      "store": "maxima",
+      "product": "Mandlid EXTRA LINE 500g",
+      "price": 5.99,
+      "pack": "500 г",
+      "per": 11.98,
+      "base": "кг",
+      "until": null,
+      "note": "Дешевле, чем WELL DONE"
+    },
+    {
+      "key": "орехи",
+      "store": "maxima",
+      "product": "Mandlid WELL DONE 500g",
+      "price": 6.5,
+      "pack": "500 г",
+      "per": 13,
+      "base": "кг",
+      "until": null
+    },
+    {
+      "key": "орехи",
       "store": "rimi",
-      "product": "Õun Gloster 1 kl., kg",
-      "price": 0.57,
+      "product": "Kooritud maapähkel blanšeeritud Rimi kg",
+      "price": 4.79,
       "pack": "кг",
-      "per": 0.57,
+      "per": 4.79,
+      "base": "кг",
+      "until": null,
+      "note": "Арахис втрое дешевле миндаля"
+    },
+    {
+      "key": "орехи",
+      "store": "rimi",
+      "product": "Kooritud mandel Awake 400g",
+      "price": 5.49,
+      "pack": "400 г",
+      "per": 13.73,
       "base": "кг",
       "until": null
     },
@@ -759,7 +1213,18 @@
       "per": 0.99,
       "base": "кг",
       "old": 1.29,
-      "until": "2026-08-31"
+      "until": "2026-08-31",
+      "note": "Акция, последний день"
+    },
+    {
+      "key": "фрукты",
+      "store": "rimi",
+      "product": "Õun Gloster 1 kl., kg",
+      "price": 0.57,
+      "pack": "кг",
+      "per": 0.57,
+      "base": "кг",
+      "until": null
     },
     {
       "key": "фрукты",
@@ -772,155 +1237,26 @@
       "until": null
     },
     {
-      "key": "ягоды",
-      "store": "maxima",
-      "product": "Külmutatud maasikad WELL DONE 400 г",
-      "price": 1.89,
-      "pack": "400 г",
-      "per": 4.72,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "ягоды",
-      "store": "rimi",
-      "product": "Külmutatud maasikad Rimi 400 г",
-      "price": 2,
-      "pack": "400 г",
-      "per": 5,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "ягоды",
-      "store": "rimi",
-      "product": "Maasikad kiirkülmutatud Rimi Smart 1 кг",
-      "price": 4.69,
-      "pack": "кг",
-      "per": 4.69,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "орехи",
-      "store": "maxima",
-      "product": "Mandlid WELL DONE 500 г",
-      "price": 6.5,
-      "pack": "500 г",
-      "per": 13,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "орехи",
-      "store": "rimi",
-      "product": "Mandel puhastatud Rimi 150 г",
-      "price": 2.59,
-      "pack": "150 г",
-      "per": 17.27,
-      "base": "кг",
-      "until": null
-    },
-    {
       "key": "протеин",
       "store": "maxima",
-      "product": "Vadakuvalk 80 IconFit 1 кг",
-      "price": 22.99,
+      "product": "Vadakuvalk 80 IconFit 1kg",
+      "price": 23.89,
       "pack": "кг",
-      "per": 22.99,
+      "per": 23.89,
       "base": "кг",
       "until": null,
-      "note": "Одна банка ≈ на 5 недель"
+      "note": "В Maxima на 9 € дешевле, чем в Rimi"
     },
     {
       "key": "протеин",
       "store": "rimi",
-      "product": "Vadakuvalk 80 IconFit 1 кг",
-      "price": 22.99,
+      "product": "Vadakuvalk 80 IconFit 1kg",
+      "price": 32.99,
       "pack": "кг",
-      "per": 22.99,
+      "per": 32.99,
       "base": "кг",
-      "until": null
-    },
-    {
-      "key": "фарш_индейки",
-      "store": "maxima",
-      "product": "Kalkuni hakkliha 400 г",
-      "price": 5.98,
-      "pack": "400 г",
-      "per": 14.95,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "говядина",
-      "store": "maxima",
-      "product": "Veise hakkliha BEST BUTCHER 450 г",
-      "price": 4.99,
-      "pack": "450 г",
-      "per": 11.09,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "йогурт",
-      "store": "maxima",
-      "product": "Jogurt FARM MILK naturaalne 3% 400 г",
-      "price": 0.91,
-      "pack": "400 г",
-      "per": 2.28,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "йогурт",
-      "store": "maxima",
-      "product": "Jogurt HELLUS maitsestamata 1 кг",
-      "price": 2.05,
-      "pack": "кг",
-      "per": 2.05,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "рис",
-      "store": "maxima",
-      "product": "Riis aurutatud WELL DONE 4×100 г",
-      "price": 1.35,
-      "pack": "400 г",
-      "per": 3.38,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "рис",
-      "store": "maxima",
-      "product": "Aurutatud riis EXTRA LINE 800 г",
-      "price": 1.59,
-      "pack": "800 г",
-      "per": 1.99,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "гречка",
-      "store": "maxima",
-      "product": "Tatar EXTRA LINE 4×100 г",
-      "price": 0.99,
-      "pack": "400 г",
-      "per": 2.47,
-      "base": "кг",
-      "until": null
-    },
-    {
-      "key": "гречка",
-      "store": "maxima",
-      "product": "Tatar WELL DONE 800 г",
-      "price": 1.79,
-      "pack": "800 г",
-      "per": 2.24,
-      "base": "кг",
-      "until": null
+      "until": null,
+      "note": "Тот же товар, но заметно дороже"
     }
   ]
 }
